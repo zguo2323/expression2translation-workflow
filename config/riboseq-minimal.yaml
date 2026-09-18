@@ -1,0 +1,14 @@
+reference_manifest: metadata/reference-ensembl-115.json
+sample_ids: [young_ribo_1, middle_ribo_1]
+synthetic: false
+strand_mode: null             # Confirm from methods/reads before running
+strand_evidence: null
+offset_table: null             # Derive from real read-length/metagene evidence
+offset_evidence: null
+min_mapq: 20
+require_unique: true
+min_mapping_rate: 0.5
+max_rrna_fraction: 0.8
+min_frame0_fraction: 0.5
+metagene_upstream: 30
+metagene_downstream: 90

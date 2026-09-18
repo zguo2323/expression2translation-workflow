@@ -1,0 +1,16 @@
+reference_manifest: metadata/reference-ensembl-115.json
+sample_ids: [young_rna_1, young_rna_2, middle_rna_1, middle_rna_2]
+synthetic: false
+library_type: null          # Explicit IU/ISF/ISR, or A for documented auto-detection
+library_evidence: null
+index_k: 31
+min_mapping_rate: 0.5       # Engineering gate; review for real data
+min_library_compatibility: 0.8
+run_deseq2: true
+design_confirmed: false
+design_evidence: null
+contrast: [condition, Middle, Young]
+min_count: 10
+min_samples: 2
+alpha: 0.05
+fit_type: parametric

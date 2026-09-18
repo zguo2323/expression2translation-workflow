@@ -216,3 +216,35 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# E2T local data and workflow products
+.DS_Store
+.snakemake/
+data/
+results/
+logs/
+benchmarks/
+resources/reference/
+resources/indices/
+.conda/
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.sra
+*.bam
+*.bai
+*.sam
+*.cram
+*.crai
+*.bt2
+*.bt2l
+# Tiny test fixtures are intentionally versionable.
+!tests/fixtures/**/*.fastq
+!tests/fixtures/**/*.fastq.gz
+
+# Local project notes and handoff records
+/项目框架-可复现功能基因组工作流.md
+/新仓库交接-E2T.md
+/docs/implementation-plan.md
+/docs/phase0-validation.md

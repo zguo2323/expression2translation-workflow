@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "E2T samples schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sample_id",
+    "run_accession",
+    "geo_accession",
+    "biosample",
+    "assay",
+    "condition",
+    "replicate",
+    "layout",
+    "fastq_1",
+    "fastq_2"
+  ],
+  "properties": {
+    "sample_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "run_accession": {
+      "type": "string",
+      "pattern": "^SRR[0-9]+$"
+    },
+    "geo_accession": {
+      "type": "string",
+      "pattern": "^GSM[0-9]+$"
+    },
+    "biosample": {
+      "type": "string",
+      "pattern": "^SAMN[0-9]+$"
+    },
+    "assay": {
+      "enum": [
+        "rnaseq",
+        "riboseq"
+      ]
+    },
+    "condition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "replicate": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "layout": {
+      "enum": [
+        "PAIRED",
+        "SINGLE"
+      ]
+    },
+    "fastq_1": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fastq_2": {
+      "type": "string"
+    }
+  }
+}

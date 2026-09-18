@@ -1,0 +1,350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "E2T config schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "stage",
+    "samples",
+    "source_manifest",
+    "sources",
+    "dataset",
+    "design",
+    "paths",
+    "resources",
+    "reference",
+    "preprocessing",
+    "integration"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "stage": {
+      "enum": ["metadata", "qc", "rnaseq", "riboseq", "integration"]
+    },
+    "qc_config": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rna_config": {"type": "string", "minLength": 1},
+    "ribo_config": {"type": "string", "minLength": 1},
+    "integration_config": {"type": "string", "minLength": 1},
+    "samples": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_manifest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accessions",
+        "sra",
+        "geo_soft"
+      ],
+      "properties": {
+        "accessions": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sra": {
+          "type": "string",
+          "minLength": 1
+        },
+        "geo_soft": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "geo",
+        "bioproject",
+        "sra_study",
+        "organism"
+      ],
+      "properties": {
+        "geo": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bioproject": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sra_study": {
+          "type": "string",
+          "minLength": 1
+        },
+        "organism": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "design": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conditions",
+        "replicates",
+        "assays",
+        "pairing",
+        "integration_level"
+      ],
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "replicates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "assays": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rnaseq",
+            "riboseq"
+          ],
+          "properties": {
+            "rnaseq": {
+              "const": "PAIRED"
+            },
+            "riboseq": {
+              "const": "SINGLE"
+            }
+          }
+        },
+        "pairing": {
+          "const": "unconfirmed"
+        },
+        "integration_level": {
+          "const": "condition"
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "sra",
+        "reference",
+        "results",
+        "logs"
+      ],
+      "properties": {
+        "raw": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sra": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "results": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logs": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "threads",
+        "mem_mb"
+      ],
+      "properties": {
+        "threads": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mem_mb": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_id",
+        "provider",
+        "release",
+        "genome",
+        "annotation",
+        "transcriptome",
+        "rrna"
+      ],
+      "properties": {
+        "reference_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "release": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "genome": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "annotation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "transcriptome": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "rrna": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "preprocessing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rna_adapter",
+        "rna_strandedness",
+        "ribo_adapter",
+        "ribo_strandedness",
+        "ribo_barcode_handling",
+        "ribo_psite_offsets"
+      ],
+      "properties": {
+        "rna_adapter": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "rna_strandedness": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "ribo_adapter": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "ribo_strandedness": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "ribo_barcode_handling": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "ribo_psite_offsets": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "normalization",
+        "pseudocount",
+        "differential_te"
+      ],
+      "properties": {
+        "method": {
+          "const": "descriptive_condition_level"
+        },
+        "normalization": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "pseudocount": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "differential_te": {
+          "const": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+schema_version: 1
+stage: metadata
+qc_config: config/qc.yaml
+rna_config: config/rnaseq.yaml
+ribo_config: config/riboseq.yaml
+integration_config: config/integration.yaml
+samples: config/samples.tsv
+source_manifest: metadata/source_manifest.json
+sources:
+  accessions: metadata/source/SRR_Acc_List.txt
+  sra: metadata/source/SraRunTable.csv
+  geo_soft: metadata/source/GSE203147_family.soft.gz
+dataset:
+  geo: GSE203147
+  bioproject: PRJNA838843
+  sra_study: SRP375616
+  organism: Saccharomyces cerevisiae
+design:
+  conditions: [Young, Middle]
+  replicates: [1, 2]
+  assays:
+    rnaseq: PAIRED
+    riboseq: SINGLE
+  pairing: unconfirmed
+  integration_level: condition
+paths:
+  raw: data/raw
+  sra: data/sra
+  reference: resources/reference
+  results: results
+  logs: logs
+resources:
+  threads: 4
+  mem_mb: 4096
+reference:
+  reference_id: ensembl-115-r64
+  provider: Ensembl
+  release: "115"
+  genome: resources/reference/ensembl-115-r64/source/genome.fa.gz
+  annotation: resources/reference/ensembl-115-r64/source/annotation.gtf.gz
+  transcriptome: resources/reference/ensembl-115-r64/derived/transcripts.fa
+  rrna: resources/reference/ensembl-115-r64/derived/rrna.fa
+preprocessing:
+  rna_adapter: null
+  rna_strandedness: null
+  ribo_adapter: null
+  ribo_strandedness: null
+  ribo_barcode_handling: null
+  ribo_psite_offsets: null
+integration:
+  method: descriptive_condition_level
+  normalization: null
+  pseudocount: null
+  differential_te: false

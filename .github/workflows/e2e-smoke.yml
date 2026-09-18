@@ -1,0 +1,19 @@
+name: Complete E2T smoke (synthetic)
+on: [push, pull_request]
+jobs:
+  e2t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: envs/workflow.yaml
+          activate-environment: e2t-workflow
+          miniforge-version: latest
+          use-mamba: true
+      - name: Unit and DAG tests
+        shell: bash -el {0}
+        run: python -m unittest discover -s tests -v
+      - name: Deploy rule environments and run complete synthetic workflow
+        shell: bash -el {0}
+        run: python scripts/smoke_integration.py --use-conda

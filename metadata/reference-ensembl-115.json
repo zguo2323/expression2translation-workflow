@@ -1,0 +1,42 @@
+{
+  "reference_id": "ensembl-115-r64",
+  "provider": "Ensembl",
+  "release": "115",
+  "files": {
+    "genome": {
+      "path": "resources/reference/ensembl-115-r64/source/genome.fa.gz",
+      "sha256": "a9953096d6a041a01a4cb5352b0232ee9373bf4c050fb23cb7ae673b2e1bb528",
+      "source": "https://ftp.ensembl.org/pub/release-115/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz",
+      "retrieved_at": "2026-09-16T12:31:49.867048+00:00",
+      "derivation": null
+    },
+    "annotation": {
+      "path": "resources/reference/ensembl-115-r64/source/annotation.gtf.gz",
+      "sha256": "5b20bb9a1ab7068fee9148f646ca1c12e68d656faddd5fde4ec8537dd26b9e89",
+      "source": "https://ftp.ensembl.org/pub/release-115/gtf/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.115.gtf.gz",
+      "retrieved_at": "2026-09-16T12:31:49.867048+00:00",
+      "derivation": null
+    },
+    "transcriptome": {
+      "path": "resources/reference/ensembl-115-r64/derived/transcripts.fa",
+      "sha256": "f7dcb755d58e1a5748de095f01c1f10c66a521175fe8e5cb52e10596f68815a7",
+      "source": "derived from manifest genome + annotation",
+      "retrieved_at": "2026-09-16T12:31:49.867048+00:00",
+      "derivation": "scripts/prepare_reference.py: sorted exons, 1-based inclusive GTF, reverse-complement negative strand"
+    },
+    "rrna": {
+      "path": "resources/reference/ensembl-115-r64/derived/rrna.fa",
+      "sha256": "6ee60fac5957338722765f7c8084d3d4717c01472195fff5f4e1f8472beeb202",
+      "source": "derived from manifest genome + annotation",
+      "retrieved_at": "2026-09-16T12:31:49.867048+00:00",
+      "derivation": "scripts/prepare_reference.py: sorted exons, 1-based inclusive GTF, reverse-complement negative strand"
+    },
+    "tx2gene": {
+      "path": "resources/reference/ensembl-115-r64/derived/tx2gene.tsv",
+      "sha256": "15414cc637caa690496dec1a9f8f367d8e597377fbdeed3a3e299fcb03a7e75d",
+      "source": "derived from manifest genome + annotation",
+      "retrieved_at": "2026-09-16T12:31:49.867048+00:00",
+      "derivation": "scripts/prepare_reference.py: sorted exons, 1-based inclusive GTF, reverse-complement negative strand"
+    }
+  }
+}

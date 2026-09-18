@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "E2T reference manifest (file identity, not biological compatibility)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reference_id", "provider", "release", "files"],
+  "properties": {
+    "reference_id": {"type": "string", "minLength": 1},
+    "provider": {"type": "string", "minLength": 1},
+    "release": {"type": "string", "minLength": 1},
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["genome", "annotation", "transcriptome", "rrna"],
+      "properties": {
+        "genome": {"$ref": "#/$defs/file"},
+        "annotation": {"$ref": "#/$defs/file"},
+        "transcriptome": {"$ref": "#/$defs/file"},
+        "rrna": {"$ref": "#/$defs/file"},
+        "tx2gene": {"$ref": "#/$defs/file"}
+      }
+    }
+  },
+  "$defs": {
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "source", "retrieved_at", "derivation"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "source": {"type": "string", "minLength": 1},
+        "retrieved_at": {"type": "string", "minLength": 1},
+        "derivation": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

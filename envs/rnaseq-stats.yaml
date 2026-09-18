@@ -1,0 +1,7 @@
+name: e2t-rnaseq-stats
+channels: [conda-forge, bioconda, nodefaults]
+dependencies:
+  - r-base=4.5.3
+  - bioconductor-deseq2=1.50.2
+  - bioconductor-tximport=1.38.2
+  - r-jsonlite=2.0.0
