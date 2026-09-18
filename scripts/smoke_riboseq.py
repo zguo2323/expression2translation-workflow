@@ -103,7 +103,8 @@ def smoke(args):
     environment = dict(os.environ)
     if not args.use_conda:
         environment["PATH"] = os.pathsep.join([str(ROOT / ".conda/riboseq/bin"), str(ROOT / ".conda/qc/bin"), environment["PATH"]])
-    command = [str(ROOT / ".venv/bin/snakemake"), "--cores", "2", "--snakefile", "workflow/Snakefile"]
+    command = [shutil.which("snakemake") or str(ROOT / ".venv/bin/snakemake"),
+               "--cores", "2", "--snakefile", "workflow/Snakefile"]
     if args.use_conda:
         command += ["--use-conda"]
     for step, extra in (("dry-run", ["--dry-run"]), ("run", []), ("rerun", [])):
