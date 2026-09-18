@@ -1,0 +1,29 @@
+# Raw QC may run as soon as one library has complete FASTQ files.
+mode: raw                 # raw | trim
+sample_ids: []            # empty = all 8; set a subset for incremental QC
+synthetic: false
+policies:
+  rnaseq:
+    confirmed: false
+    evidence: null
+    adapter_mode: null    # sequence | none (none means confirmed absent/already removed)
+    adapter_r1: null
+    adapter_r2: null
+    barcode_mode: null    # none | fixed_front; unsupported barcode sorting blocks trim
+    trim_front1: 0
+    trim_front2: 0
+    min_length: null
+    quality_phred: 20
+    unqualified_percent: 40
+  riboseq:
+    confirmed: false
+    evidence: null
+    adapter_mode: null
+    adapter_r1: null
+    adapter_r2: null
+    barcode_mode: null
+    trim_front1: 0
+    trim_front2: 0
+    min_length: null
+    quality_phred: 20
+    unqualified_percent: 40

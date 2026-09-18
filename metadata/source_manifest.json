@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "note": "Checksums computed from user-provided local files; original retrieval date and exact export procedure unknown. URLs identify source resources, not a verified download history.",
+  "files": [
+    {
+      "path": "metadata/source/SRR_Acc_List.txt",
+      "role": "selected_run_accessions",
+      "source_url": "https://www.ncbi.nlm.nih.gov/Traces/study/?acc=SRP375616",
+      "retrieved_at": null,
+      "bytes": 95,
+      "sha256": "9481d3c936992398d9c48c61b25639fb39188f938bcbe784acf0a50d745a6641"
+    },
+    {
+      "path": "metadata/source/SraRunTable.csv",
+      "role": "sra_run_metadata",
+      "source_url": "https://www.ncbi.nlm.nih.gov/Traces/study/?acc=SRP375616",
+      "retrieved_at": null,
+      "bytes": 3729,
+      "sha256": "328c151c860914a46d7207d46e00dd7d7e8b2a4beccf6289aa429a5076928767"
+    },
+    {
+      "path": "metadata/source/GSE203147_family.soft.gz",
+      "role": "geo_sample_metadata",
+      "source_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE203nnn/GSE203147/soft/GSE203147_family.soft.gz",
+      "retrieved_at": null,
+      "bytes": 3598,
+      "sha256": "0adb0567df651d0148b524ecd0242005fcd4d7050e6a1a6426215bbe57554725"
+    },
+    {
+      "path": "metadata/source/GSE203147_series_matrix.txt.gz",
+      "role": "geo_series_metadata",
+      "source_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE203nnn/GSE203147/matrix/GSE203147_series_matrix.txt.gz",
+      "retrieved_at": null,
+      "bytes": 3364,
+      "sha256": "b9a4af7f78e7c108674367ba124b2557e7543527bcf00e0dd115a5a5ddd9d8c0"
+    },
+    {
+      "path": "metadata/source/GSE203147_RAW.tar",
+      "role": "author_processed_counts_not_fastq",
+      "source_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE203nnn/GSE203147/suppl/GSE203147_RAW.tar",
+      "retrieved_at": null,
+      "bytes": 440320,
+      "sha256": "3c0269588d0c1cf4d1d445a7c2cec6aa2473a6d6f6c2d9ef05a820b767e82edc"
+    }
+  ]
+}

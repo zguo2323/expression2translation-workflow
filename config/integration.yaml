@@ -1,0 +1,9 @@
+synthetic: false
+normalization: rna_gene_tpm__ribo_cds_tpm
+aggregation: arithmetic_mean_by_condition
+pseudocount: 1.0
+min_rna_tpm: 1.0
+min_ribo_tpm: 1.0
+contrast: [Middle, Young]
+differential_te: false
+report_title: Expression-to-Translation Workflow Report

@@ -1,0 +1,83 @@
+from pathlib import Path
+import json
+import sys
+
+sys.path.insert(0, str(Path(workflow.basedir).parent))
+from src.validation.validate import ValidationError, validate_metadata
+from snakemake.exceptions import WorkflowError
+
+configfile: "config/config.yaml"
+
+# Read-only preflight also runs during -n; no FASTQ/reference dependency yet.
+try:
+    preflight = validate_metadata(config)
+except ValidationError as error:
+    raise WorkflowError(str(error)) from error
+
+VALIDATION_REPORT = str(Path(config["paths"]["results"]) / "validation/metadata.json")
+INTEGRATION_ENABLED = config["stage"] == "integration"
+RNA_ENABLED = config["stage"] == "rnaseq" or INTEGRATION_ENABLED
+RIBO_ENABLED = config["stage"] == "riboseq" or INTEGRATION_ENABLED
+if RNA_ENABLED:
+    from src.rnaseq.config import load_rna
+    try:
+        RNA, RNA_SAMPLES, RNA_REFERENCE = load_rna(config, preflight["samples"])
+    except (ValidationError, OSError, ValueError, TypeError, KeyError) as error:
+        raise WorkflowError(str(error)) from error
+    RNA_ROOT = str(Path(config["paths"]["results"]) / "rnaseq")
+    RNA_REPORT = RNA_ROOT + "/gene_analysis"
+if RIBO_ENABLED:
+    from src.riboseq.config import load_ribo
+    try:
+        RIBO, RIBO_SAMPLES, RIBO_REFERENCE, RIBO_OFFSETS = load_ribo(config, preflight["samples"])
+    except (ValidationError, OSError, ValueError, TypeError, KeyError) as error:
+        raise WorkflowError(str(error)) from error
+    RIBO_ROOT = str(Path(config["paths"]["results"]) / "riboseq")
+    RIBO_REPORT = RIBO_ROOT + "/summary"
+if INTEGRATION_ENABLED:
+    from src.integration.config import load_integration
+    try:
+        INTEGRATION = load_integration(config, RNA, RNA_SAMPLES, RIBO, RIBO_SAMPLES, RNA_REFERENCE, RIBO_REFERENCE)
+    except (ValidationError, OSError, ValueError, TypeError, KeyError) as error:
+        raise WorkflowError(str(error)) from error
+    INTEGRATION_ROOT = str(Path(config["paths"]["results"]) / "integration")
+    CATALOG = str(Path(config["paths"]["results"]) / "catalog.db")
+    CATALOG_PROVENANCE = str(Path(config["paths"]["results"]) / "provenance/catalog.json")
+    REPORT_ROOT = str(Path(config["paths"]["results"]) / "report")
+    FINAL_REPORT = REPORT_ROOT + "/report.html"
+QC_ENABLED = config["stage"] in ("qc", "rnaseq", "riboseq", "integration")
+if QC_ENABLED:
+    from src.qc.config import load_qc
+    try:
+        analysis_ids = (RNA["sample_ids"] + RIBO["sample_ids"] if INTEGRATION_ENABLED else
+                        RNA["sample_ids"] if RNA_ENABLED else RIBO["sample_ids"] if RIBO_ENABLED else None)
+        QC, QC_SAMPLES = load_qc(config, preflight["samples"], analysis_ids)
+        if (RNA_ENABLED or RIBO_ENABLED) and QC["mode"] != "trim":
+            raise ValidationError("Analysis branches require QC mode=trim")
+        if RNA_ENABLED and QC["synthetic"] != RNA["synthetic"]:
+            raise ValidationError("RNA requires a consistent synthetic flag")
+        if RIBO_ENABLED and QC["synthetic"] != RIBO["synthetic"]:
+            raise ValidationError("Ribo requires a consistent synthetic flag")
+    except (ValidationError, OSError, ValueError, TypeError, KeyError) as error:
+        raise WorkflowError(str(error)) from error
+    QC_ROOT = str(Path(config["paths"]["results"]) / "qc" / QC["mode"])
+    QC_REPORT = QC_ROOT + "/multiqc/multiqc_report.html"
+
+rule all:
+    input:
+        [VALIDATION_REPORT] + ([QC_REPORT] if QC_ENABLED else []) + ([RNA_REPORT] if RNA_ENABLED else []) + \
+        ([RIBO_REPORT] if RIBO_ENABLED else []) + ([INTEGRATION_ROOT, CATALOG, CATALOG_PROVENANCE, FINAL_REPORT] if INTEGRATION_ENABLED else [])
+
+include: "rules/validate.smk"
+
+if QC_ENABLED:
+    include: "rules/qc.smk"
+
+if RNA_ENABLED:
+    include: "rules/rnaseq.smk"
+
+if RIBO_ENABLED:
+    include: "rules/riboseq.smk"
+
+if INTEGRATION_ENABLED:
+    include: "rules/integration.smk"

@@ -1,0 +1,25 @@
+name: QC smoke (synthetic)
+on: [push, pull_request]
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: envs/qc.yaml
+          activate-environment: e2t-qc
+          miniforge-version: latest
+          use-mamba: true
+      - name: Install workflow runner
+        shell: bash -el {0}
+        run: python -m pip install -r envs/requirements.txt
+      - name: Metadata, failure and interruption tests
+        shell: bash -el {0}
+        run: python -m unittest discover -s tests -v
+      - name: Real QC tools on synthetic SE and PE reads
+        shell: bash -el {0}
+        run: python scripts/smoke_qc.py
+      - name: Raw QC with unresolved preprocessing policies
+        shell: bash -el {0}
+        run: python scripts/smoke_qc.py --mode raw --directory results/synthetic-raw-smoke
