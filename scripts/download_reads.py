@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Sequential SRA download; optional validated FASTQ conversion. Run from repo root."""
 import argparse
-import csv
 from datetime import datetime, timezone
 import fcntl
 import gzip
@@ -18,7 +17,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.validation.reads import validate_reads
-from src.validation.validate import sha256
+from src.validation.validate import sha256, read_table, validate_sample_rows
 
 
 def archive_directory(base, run):
@@ -52,32 +51,50 @@ def invoke(command, log):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--accessions", default="metadata/source/SRR_Acc_List.txt")
+    parser.add_argument("--accessions", help="Optional explicit SRR/ERR/DRR list; default: active samplesheet")
     parser.add_argument("--samples", default="config/samples.tsv")
     parser.add_argument("--run", help="Process only this run from the accession list")
+    parser.add_argument("--raw-dir", default="data/raw", help="Allowed FASTQ root, matching paths.raw")
     parser.add_argument("--sra-dir", default="data/sra")
     parser.add_argument("--log-dir", default="logs/download")
     parser.add_argument("--convert", action="store_true", help="After download, validate and convert to gzip FASTQ")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--dry-run", action="store_true", help="Print plan without touching data or running tools")
     args = parser.parse_args()
-    runs = Path(args.accessions).read_text().splitlines()
-    if not runs or len(runs) != len(set(runs)) or any(not re.fullmatch(r"SRR\d+", r) for r in runs):
-        raise ValueError("Accession list must contain unique SRR IDs, one per line")
+    rows = read_table(Path(args.samples), "\t")
+    validate_sample_rows(rows, Path.cwd(),
+                        {"conditions": sorted({r.get("condition", "") for r in rows}),
+                         "assays": {"rnaseq": "PAIRED", "riboseq": "SINGLE"}},
+                        args.raw_dir, Path(__file__).resolve().parents[1] / "workflow/schemas/samples.schema.json")
+    samples = {r["run_accession"]: r for r in rows if r.get("run_accession")}
+    runs = Path(args.accessions).read_text().splitlines() if args.accessions else list(samples)
+    if len(runs) != len(set(runs)) or any(not re.fullmatch(r"(?:SRR|ERR|DRR)\d+", r) for r in runs):
+        raise ValueError("Accession list must contain unique SRR/ERR/DRR IDs, one per line")
+    if args.accessions and not runs:
+        raise ValueError("Empty explicit accession list")
     if args.threads < 1:
         raise ValueError("--threads must be positive")
     if args.run:
         if args.run not in runs:
-            raise ValueError("--run must be in the accession list")
+            raise ValueError("--run must be in the selected accession list")
         runs = [args.run]
-    with open(args.samples) as handle:
-        samples = {r["run_accession"]: r for r in csv.DictReader(handle, delimiter="\t")}
+    missing = set(runs) - set(samples)
+    if missing:
+        raise ValueError(f"Selected runs missing from samplesheet: {sorted(missing)}")
+    if not runs:
+        print("No accession-bearing active samples; use local FASTQ directly.")
+        return 0
     base, logs = Path(args.sra_dir), Path(args.log_dir)
     plan = [(run, archive_directory(base, run)) for run in runs]
     if args.dry_run:
         for run, directory in plan:
             print(f"{run}: prefetch -O {directory.parent}; archive={directory}; convert={args.convert}")
         return 0
+    if args.convert:
+        for run, _ in plan:
+            outputs = [Path(samples[run][k]) for k in ("fastq_1", "fastq_2") if samples[run][k]]
+            if any(p.exists() for p in outputs) and not (logs / f"{run}.completed.json").is_file():
+                raise ValueError(f"FASTQ already exists for {run}; validate local files directly. No download/conversion started.")
     for tool in (["prefetch", "vdb-validate", "fasterq-dump"] if args.convert else ["prefetch"]):
         if not shutil.which(tool):
             raise ValueError(f"Missing command: {tool}")

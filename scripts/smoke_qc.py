@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Create isolated synthetic SE/PE data and exercise the real QC tools and DAG."""
 import argparse
-import csv
 import gzip
 import json
 from pathlib import Path
@@ -10,6 +9,8 @@ import shutil
 import subprocess
 import sys
 import yaml
+
+from synthetic_inputs import write_samples
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,6 +30,7 @@ def main():
         shutil.copytree(ROOT / directory, destination / directory, ignore=shutil.ignore_patterns("__pycache__", ".DS_Store"))
     config = yaml.safe_load((destination / "config/config.yaml").read_text())
     config["stage"] = "qc"
+    samples = write_samples(destination, config, conditions=("Young",), replicates=("1",))
     (destination / "config/config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     qc = yaml.safe_load((destination / "config/qc.yaml").read_text())
     qc.update(mode=args.mode, synthetic=True, sample_ids=["young_rna_1", "young_ribo_1"])
@@ -41,8 +43,6 @@ def main():
         qc["policies"] = yaml.safe_load((ROOT / "config/qc.yaml").read_text())["policies"]
     (destination / "config/qc.yaml").write_text(yaml.safe_dump(qc, sort_keys=False))
     randomizer = random.Random(203147)
-    with (destination / "config/samples.tsv").open() as handle:
-        samples = [r for r in csv.DictReader(handle, delimiter="\t") if r["sample_id"] in qc["sample_ids"]]
     for sample in samples:
         for mate, key in enumerate(("fastq_1", "fastq_2"), 1):
             if not sample[key]:

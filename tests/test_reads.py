@@ -52,5 +52,6 @@ class ReadsTests(unittest.TestCase):
     def test_unconfirmed_policy_blocks(self):
         import yaml
         policy = yaml.safe_load(Path("config/qc.yaml").read_text())["policies"]["riboseq"]
+        policy["confirmed"] = False
         with self.assertRaisesRegex(ValidationError, "confirmed"):
             validate_policy(policy, "riboseq")

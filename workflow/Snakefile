@@ -42,6 +42,11 @@ if INTEGRATION_ENABLED:
         raise WorkflowError(str(error)) from error
     INTEGRATION_ROOT = str(Path(config["paths"]["results"]) / "integration")
     CATALOG = str(Path(config["paths"]["results"]) / "catalog.db")
+    from src.catalog.build import check_catalog_schema
+    try:
+        check_catalog_schema(CATALOG)
+    except ValidationError as error:
+        raise WorkflowError(str(error)) from error
     CATALOG_PROVENANCE = str(Path(config["paths"]["results"]) / "provenance/catalog.json")
     REPORT_ROOT = str(Path(config["paths"]["results"]) / "report")
     FINAL_REPORT = REPORT_ROOT + "/report.html"

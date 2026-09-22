@@ -1,0 +1,7 @@
+sample_id	assay	condition	replicate	layout	fastq_1	fastq_2
+young_rnaseq_donor_a	rnaseq	Young	donor_A	PAIRED	data/raw/young_rnaseq_donor_a_1.fastq.gz	data/raw/young_rnaseq_donor_a_2.fastq.gz
+young_rnaseq_donor_b	rnaseq	Young	donor_B	PAIRED	data/raw/young_rnaseq_donor_b_1.fastq.gz	data/raw/young_rnaseq_donor_b_2.fastq.gz
+middle_rnaseq_donor_a	rnaseq	Middle	donor_A	PAIRED	data/raw/middle_rnaseq_donor_a_1.fastq.gz	data/raw/middle_rnaseq_donor_a_2.fastq.gz
+middle_rnaseq_donor_b	rnaseq	Middle	donor_B	PAIRED	data/raw/middle_rnaseq_donor_b_1.fastq.gz	data/raw/middle_rnaseq_donor_b_2.fastq.gz
+young_riboseq_culture_7	riboseq	Young	culture_7	SINGLE	data/raw/young_riboseq_culture_7_1.fastq.gz	
+middle_riboseq_culture_7	riboseq	Middle	culture_7	SINGLE	data/raw/middle_riboseq_culture_7_1.fastq.gz	

@@ -1,14 +1,14 @@
 reference_manifest: metadata/reference-ensembl-115.json
-sample_ids: [young_rna_1, young_rna_2, middle_rna_1, middle_rna_2]
+sample_ids: []             # all active libraries of this assay
 synthetic: false
-library_type: null          # Explicit IU/ISF/ISR, or A for documented auto-detection
-library_evidence: null
+library_type: ISR           # Explicit IU/ISF/ISR, or A for documented auto-detection
+library_evidence: "Four dispersed-sample Salmon pilots inferred ISR with compatible_fragment_ratio=1.0 and 99.26-99.46% ISR among inward stranded mappings; agrees with TruSeq Stranded mRNA and R1-reverse diagnostic evidence"
 index_k: 31
 min_mapping_rate: 0.5       # Engineering gate; review for real data
 min_library_compatibility: 0.8
 run_deseq2: true
-design_confirmed: false
-design_evidence: null
+design_confirmed: true
+design_evidence: "Zhao et al. J Fungi 2022 methods report two independent biological replicates for each Young/Middle condition; accession grouping is cross-checked against GSE203147 metadata; no cross-assay pairing term is used"
 contrast: [condition, Middle, Young]
 min_count: 10
 min_samples: 2

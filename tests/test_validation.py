@@ -53,6 +53,99 @@ class MetadataValidationTests(unittest.TestCase):
         self.assertFalse((self.root / "results").exists())
         self.assertTrue(all(r["sra_assay_type"] == "OTHER" for r in report["samples"] if r["assay"] == "riboseq"))
 
+    def local_mode(self):
+        self.config["source_validation"] = "local"
+        for key in ("source_manifest", "sources", "study_samples"):
+            self.config.pop(key, None)
+        shutil.rmtree(self.root / "metadata")
+        def clean(rows):
+            for row in rows:
+                for key in ("run_accession", "geo_accession", "biosample"):
+                    row[key] = ""
+        self.edit_samples(clean)
+
+    def test_four_run_subset_preserves_full_study_sources(self):
+        source = self.root / self.config["study_samples"]
+        before = source.read_bytes()
+        ids = {"young_rna_2", "middle_rna_1", "young_ribo_1", "middle_ribo_1"}
+        self.edit_samples(lambda rows: rows.__setitem__(slice(None), [r for r in rows if r["sample_id"] in ids]))
+        report = validate_metadata(self.config, self.root)
+        self.assertEqual(report["sample_count"], 4)
+        self.assertEqual(report["archive_bytes"], 4384989091)
+        self.assertEqual(before, source.read_bytes())
+
+    def test_study_paths_and_conditions_independent_of_active_subset(self):
+        self.config["paths"]["raw"] = "data/custom"
+        self.config["design"]["conditions"] = ["Young"]
+        def subset(rows):
+            rows[:] = [r for r in rows if r["condition"] == "Young"]
+            for row in rows:
+                for key in ("fastq_1", "fastq_2"):
+                    row[key] = row[key].replace("data/raw/", "data/custom/")
+        self.edit_samples(subset)
+        self.assertEqual(validate_metadata(self.config, self.root)["sample_count"], 4)
+
+    def test_local_optional_columns_absent_and_unknown_sizes(self):
+        self.local_mode()
+        path = self.root / self.config["samples"]
+        with path.open() as handle:
+            rows = list(csv.DictReader(handle, delimiter="\t"))
+        fields = [k for k in rows[0] if k not in ("run_accession", "geo_accession", "biosample")]
+        with path.open("w") as handle:
+            writer = csv.DictWriter(handle, fields, delimiter="\t", extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+        report = validate_metadata(self.config, self.root)
+        self.assertEqual(report["sample_count"], 8)
+        self.assertIsNone(report["archive_bytes"])
+        self.assertIsNone(report["bases"])
+        self.assertIsNone(report["source_manifest"])
+        self.assertEqual(report["source_files"], [])
+        self.config["paths"]["results"] = "results/local"
+        result = subprocess.run([sys.executable, "-m", "src.validation.validate", "--config-json", json.dumps(self.config),
+                                 "--output", "results/local/validation/metadata.json"],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        snapshot = json.loads((self.root / "results/local/validation/metadata.json").read_text())
+        self.assertIsNone(snapshot["provenance"]["source_manifest_sha256"])
+
+    def test_local_variable_counts_replicate_labels_and_single_condition(self):
+        self.local_mode()
+        self.config["design"]["conditions"] = ["Young"]
+        def subset(rows):
+            rows[:] = [r for r in rows if r["condition"] == "Young"][:3]
+            for index, row in enumerate(rows):
+                row["replicate"] = f"donor_{index + 7}"
+        self.edit_samples(subset)
+        report = validate_metadata(self.config, self.root)
+        self.assertEqual(report["sample_count"], 3)
+
+    def test_local_invalid_accession_and_duplicate_biosample(self):
+        self.local_mode()
+        self.edit_samples(lambda rows: rows[0].update(run_accession="OTHER"))
+        self.fails("run_accession")
+        self.edit_samples(lambda rows: rows[0].update(run_accession=""))
+        self.edit_samples(lambda rows: [r.update(biosample="SAMN1") for r in rows[:2]])
+        self.fails("Duplicate BioSample")
+
+    def test_study_mapping_still_checked_against_geo(self):
+        active = self.config["samples"]
+        self.config["samples"] = self.config["study_samples"]
+        def swap(rows):
+            rows[0]["replicate"], rows[1]["replicate"] = rows[1]["replicate"], rows[0]["replicate"]
+        self.edit_samples(swap)
+        self.config["samples"] = active
+        self.fails("GEO title")
+
+    @unittest.skipUnless(shutil.which("snakemake"), "Snakemake needed for local DAG test")
+    def test_local_dag_without_source_files(self):
+        self.local_mode()
+        (self.root / "config/config.yaml").write_text(yaml.safe_dump(self.config))
+        result = subprocess.run([shutil.which("snakemake"), "--snakefile", "workflow/Snakefile", "--cores", "1", "--dry-run"],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("validate_metadata", result.stdout + result.stderr)
+
     def test_duplicate_run(self):
         self.edit_samples(lambda rows: rows[1].update(run_accession=rows[0]["run_accession"]))
         self.fails("Duplicate run_accession")
@@ -63,25 +156,25 @@ class MetadataValidationTests(unittest.TestCase):
 
     def test_wrong_layout(self):
         self.edit_samples(lambda rows: rows[0].update(layout="SINGLE"))
-        self.fails("LibraryLayout mismatch")
+        self.fails("assay/layout mismatch")
 
     def test_missing_replicate(self):
         self.edit_samples(lambda rows: rows[1].update(replicate="1"))
-        self.fails("Incomplete/duplicate")
+        self.fails("Duplicate biological identity")
 
     def test_wrong_accession(self):
         self.edit_samples(lambda rows: rows[0].update(run_accession="SRR99999999"))
-        self.fails("selected accession list")
+        self.fails("study run_accession mismatch")
 
     def test_wrong_geo_mapping(self):
         def swap(rows):
             rows[0]["geo_accession"], rows[1]["geo_accession"] = rows[1]["geo_accession"], rows[0]["geo_accession"]
         self.edit_samples(swap)
-        self.fails("Sample Name mismatch")
+        self.fails("study geo_accession mismatch")
 
     def test_wrong_biosample(self):
         self.edit_samples(lambda rows: rows[0].update(biosample="SAMN99999999"))
-        self.fails("BioSample mismatch")
+        self.fails("study biosample mismatch")
 
     def test_other_is_not_project_assay(self):
         self.edit_samples(lambda rows: rows[4].update(assay="OTHER"))
@@ -120,7 +213,7 @@ class MetadataValidationTests(unittest.TestCase):
         def swap(rows):
             rows[0]["replicate"], rows[1]["replicate"] = rows[1]["replicate"], rows[0]["replicate"]
         self.edit_samples(swap)
-        self.fails("GEO title")
+        self.fails("study replicate mismatch")
 
     def test_path_traversal(self):
         self.edit_samples(lambda rows: rows[0].update(fastq_1="../outside.fastq.gz"))

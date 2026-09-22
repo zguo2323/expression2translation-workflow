@@ -160,6 +160,7 @@ def count_sites(task):
     frames = Counter()
     metagene = Counter()
     missing_lengths = set()
+    selected_lengths = set(task["footprint_lengths"])
     with pysam.AlignmentFile(task["bam"], "rb") as handle:
         for read in handle.fetch(until_eof=True):
             if read.is_unmapped:
@@ -170,6 +171,9 @@ def count_sites(task):
                 continue
             length = read.query_length
             lengths[length]["primary_mapped"] += 1
+            if length not in selected_lengths:
+                filters["excluded_length"] += 1
+                continue
             if read.mapping_quality < task["min_mapq"]:
                 filters["low_mapq"] += 1
                 continue
@@ -248,7 +252,7 @@ def count_sites(task):
                   frame_counts={str(i): frames[i] for i in range(3)}, frame0_fraction=frame0,
                   min_frame0_fraction=task["min_frame0_fraction"], filters=dict(sorted(filters.items())),
                   parameters={key: task[key] for key in ("strand_mode", "strand_evidence", "min_mapq", "require_unique",
-                                                        "offset_evidence", "metagene_upstream", "metagene_downstream")},
+                                                        "footprint_lengths", "offset_evidence", "metagene_upstream", "metagene_downstream")},
                   inputs_sha256={key: sha256(Path(task[key])) for key in ("bam", "features", "offset_table")},
                   artifacts_sha256={name: sha256(directory / name) for name in artifact_names},
                   pysam_version=pysam.__version__, synthetic=task["synthetic"])

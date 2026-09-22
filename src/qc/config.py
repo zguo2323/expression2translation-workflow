@@ -11,10 +11,17 @@ def load_qc(config, samples, sample_ids=None):
     require(isinstance(qc, dict) and set(qc) == {"mode", "sample_ids", "synthetic", "policies"}, "Invalid QC config keys")
     require(qc["mode"] in ("raw", "trim"), "QC mode must be raw or trim")
     require(type(qc["synthetic"]) is bool, "synthetic must be boolean")
-    ids = qc["sample_ids"] if sample_ids is None else sample_ids
+    declared = qc["sample_ids"]
+    require(isinstance(declared, list) and all(isinstance(s, str) for s in declared)
+            and len(declared) == len(set(declared)), "Invalid QC sample_ids")
+    if sample_ids is not None and declared:
+        require(set(declared) == set(sample_ids), "QC sample_ids must match analysis selections or be empty")
+    ids = declared if sample_ids is None else sample_ids
     require(isinstance(ids, list) and all(isinstance(s, str) for s in ids) and len(ids) == len(set(ids)), "Invalid QC sample_ids")
     selected = {r["sample_id"]: r for r in samples if not ids or r["sample_id"] in ids}
     require(not ids or set(ids) == set(selected), "QC sample_ids contains unknown sample")
+    qc["sample_ids"] = list(selected)
+    require(bool(selected), "QC selection is empty")
     require(set(qc["policies"]) == {"rnaseq", "riboseq"}, "Expected policies for both assays")
     if qc["mode"] == "trim":
         for assay in {r["assay"] for r in selected.values()}:

@@ -17,10 +17,11 @@ URL 用于定位来源，不表示已经验证过本地文件的下载历史。c
 
 ## 人工选样契约
 
-仅选择 Young/Middle，每组各 2 个 RNA 和 2 个 Ribo library，具体映射见 `config/samples.tsv`。
+仅选择 Young/Middle，每组各 2 个 RNA 和 2 个 Ribo library，原始映射见 `metadata/study_samples.tsv`；`config/samples.tsv` 默认保留全部 8 runs，也允许合法活跃子集。
 Ribo 的 SRA `Assay Type=OTHER` 保留在来源文件；项目 `assay=riboseq` 是人工根据 GEO 标题和描述确认的。
 校验器交叉检查 GEO title 的 assay/condition/replicate、GSM 与 BioSample/SRX 关系，以及 CSV 中的 SRR、GSM、物种和研究编号。
-SOFT 中 Aged 记录保留作为完整来源，不能进入本次样本表。
+SOFT 中 Aged 记录保留作为来源，不属于当前 study 的 Young/Middle 8-run 设计。
+通用自有 FASTQ 使用 `source_validation: local`，可无 accession；只有显式 `geo_sra` 模式要求这些来源证据。详见 [输入指南](../docs/data-input.md)。
 
 8 个 archive 合计 **10,395,980,191 bytes = 10.40 GB ≈ 9.68 GiB**；合计 **22,453,938,457 bases ≈ 22.45 Gb**。
 archive 大小不等于解压后的 FASTQ 大小。

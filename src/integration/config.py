@@ -7,7 +7,7 @@ from src.validation.validate import require, relative_path
 
 
 KEYS = {"synthetic", "normalization", "aggregation", "pseudocount", "min_rna_tpm", "min_ribo_tpm",
-        "contrast", "differential_te", "report_title"}
+        "candidate_min_ribo_psites_per_sample", "candidate_pseudocounts", "contrast", "differential_te", "report_title"}
 
 
 def load_integration(config, rna, rna_samples, ribo, ribo_samples, rna_reference, ribo_reference):
@@ -21,6 +21,13 @@ def load_integration(config, rna, rna_samples, ribo, ribo_samples, rna_reference
     for key in ("pseudocount", "min_rna_tpm", "min_ribo_tpm"):
         require(type(settings[key]) in (int, float) and settings[key] >= 0, f"Invalid integration {key}")
     require(settings["pseudocount"] > 0, "Integration pseudocount must be positive")
+    require(type(settings["candidate_min_ribo_psites_per_sample"]) is int and
+            settings["candidate_min_ribo_psites_per_sample"] >= 0,
+            "Invalid candidate_min_ribo_psites_per_sample")
+    candidates = settings["candidate_pseudocounts"]
+    require(isinstance(candidates, list) and len(candidates) >= 2 and
+            all(type(value) in (int, float) and value > 0 for value in candidates) and
+            len(set(candidates)) == len(candidates), "Invalid candidate_pseudocounts")
     require(settings["differential_te"] is False, "MVP integration is descriptive; differential_te must be false")
     require(isinstance(settings["report_title"], str) and settings["report_title"].strip(), "Missing report title")
     contrast = settings["contrast"]

@@ -17,21 +17,23 @@ read_length	psite_offset
 29	12
 ```
 
-`psite_offset` 表示从 read 5' 端到 P-site 的 0-based 距离。正向 alignment 使用 `reference_start + offset`，反向 alignment 使用 `reference_end - 1 - offset`。通过 MAPQ、唯一性、链方向和 CIGAR 过滤后的每一种 read length 都必须有 offset；缺失长度会停止计数。带 indel 或 clipping 的 alignment 不参与 P-site 计数，并在过滤指标中单列。
+`psite_offset` 表示从 read 5' 端到 P-site 的 0-based 距离。正向 alignment 使用 `reference_start + offset`，反向 alignment 使用 `reference_end - 1 - offset`。`footprint_lengths` 显式列出进入 P-site 计数的长度，并且必须与 offset 表中的长度严格相同；其他长度记录为 `excluded_length`，不会因漏填 offset 被隐式选掉。入选长度若缺少 offset 会停止计数。带 indel 或 clipping 的 alignment 不参与 P-site 计数，并在过滤指标中单列。
 
 `strand_mode` 可为 `forward`、`reverse` 或有明确证据的 `unstranded`。转录本参考全部以 5'→3' 方向保存，因此 forward 表示 read 按 transcript orientation 比对。
+
+`sample_ids: []` 自动选择活跃表全部 Ribo SE；本次为 4 libraries，但不固定数量。显式子集必须是已知且不重复的 Ribo SE ID，见 [输入指南](data-input.md)。
 
 ## 真实数据启动门槛
 
 在运行 `stage=riboseq` 前需要完成：
 
-1. 4 个 Ribo FASTQ 完整下载并通过输入校验。
+1. 所选 Ribo FASTQ 完整并通过输入校验，不要求下载器 completed manifest。
 2. `config/qc.yaml` 设为 `mode: trim`，Ribo adapter、barcode/前端裁剪和长度阈值有明确证据。
-3. `config/riboseq.yaml` 中的 `strand_mode`、`strand_evidence`、`offset_table`、`offset_evidence` 已填写。
+3. `config/riboseq.yaml` 中的 `strand_mode`、`strand_evidence`、`footprint_lengths`、`offset_table`、`offset_evidence` 已填写，入选长度与 offset 表完全一致。
 4. offset 来自本数据的 read-length、起始位点 metagene和 3-nt periodicity 评估；不能把 synthetic 的 28 nt/12 nt 参数复制到真实配置。
 5. 根据真实数据复核 rRNA fraction、mapping rate 和 frame-0 fraction 门槛。当前默认值是工程门禁，不是通用生物学标准。
 
-默认配置保留这些方法字段为 `null`，因此误把阶段切换到 `riboseq` 会在 DAG 构建时失败，不会用猜测参数继续运行。
+当前 GSE203147 配置以四样本分散抽样和 riboWaltz 2.0 交叉检查为依据，首轮主分析显式使用 forward、28 nt / offset 12。28 nt 是各条件共有的高置信长度；27/29/30 nt 留作敏感性分析，不能将当前单长度主结果解释为全部 footprints 的无偏估计。其他数据集必须替换这些项目参数，缺失或不一致的长度/offset 契约会在 DAG 构建时失败。
 
 ## 环境与运行
 
@@ -64,7 +66,7 @@ export PATH="$PWD/.conda/riboseq/bin:$PWD/.conda/qc/bin:$PATH"
 | `sites/{sample}/read_lengths.tsv` | 各 read length 的 offset、比对数、可计数数和 CDS P-sites |
 | `sites/{sample}/periodicity.*` | frame 0/1/2 counts、fraction 和 SVG |
 | `sites/{sample}/start_metagene.*` | CDS start 周围的 P-site 表和 SVG |
-| `summary/qc_metrics.tsv` | 4 个样本的 rRNA、mapping、assigned sites 和 frame-0 指标 |
+| `summary/qc_metrics.tsv` | 所选样本的 rRNA、mapping、assigned sites 和 frame-0 指标 |
 | `summary/gene_counts.tsv` | condition/sample/gene 长表，供阶段 4 联合分析使用 |
 | `summary/provenance.json` | 有效配置、reference/config、样本输入和汇总产物 SHA-256 |
 

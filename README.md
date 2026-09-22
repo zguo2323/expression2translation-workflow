@@ -17,11 +17,13 @@ metadata validation
   → SQLite catalog + provenance + Markdown/HTML report
 ```
 
-默认 `stage: metadata` 只校验元数据，不会下载 reads 或启动分析。真实分析配置故意将 adapter、library type、strand 和 P-site offset 等字段保留为 `null`；在方法和真实 reads 提供证据前，工作流会阻止相应分析分支运行。
+默认 `stage: metadata` 只校验元数据，不会下载 reads 或启动分析。本研究实例的 adapter、RNA library type、Ribo strand、显式 footprint 长度和 P-site offset 已由真实 reads 诊断写入配置；新数据集仍必须用自己的方法与 reads 证据替换这些项目参数，不能照搬 GSE203147 的值。
+
+同类酵母项目可直接输入自有 FASTQ，无需 accession；样本数不固定。详见 [新用户输入指南](docs/data-input.md)和 [local 配置示例](config/local.example.yaml)。
 
 ## 数据设计
 
-- 8 个 libraries：4 个 paired-end RNA-seq 和 4 个 single-end Ribo-seq。
+- 本次默认活跃集合为 8 个 libraries：4 个 paired-end RNA-seq 和 4 个 single-end Ribo-seq。
 - Young/Middle 每个 condition、每种 assay 各有 2 个重复。
 - SRA 将 Ribo assay 标为 `OTHER`，因此 [samples.tsv](config/samples.tsv) 人工记录 `assay=riboseq`。
 - RNA 与 Ribo 的 BioSample ID 不同；E2T 不把相同 replicate 编号视为严格配对。
@@ -65,9 +67,25 @@ snakemake --snakefile workflow/Snakefile --cores 1
 python -m unittest discover -s tests -v
 ```
 
+## 实验室项目 registry（第一阶段）
+
+安装本仓库后可使用 `e2t` 命令创建并登记多个独立项目。registry 记录项目状态、历史和最终产物索引；原始 FASTQ、BAM 与分析产物仍保存在项目目录中，不写入 SQLite。
+
+```bash
+python -m pip install -e .
+# 在无网络且环境缺少 wheel 的开发机上：python setup.py develop
+e2t init aging-yeast-2026 --root /srv/lab-e2t --title "Yeast aging" --owner alice
+e2t set-status aging-yeast-2026 --root /srv/lab-e2t --stage qc --status running
+e2t add-artifact aging-yeast-2026 --root /srv/lab-e2t \
+  --path /srv/lab-e2t/projects/aging-yeast-2026/results/report/report.html --kind html_report
+e2t status aging-yeast-2026 --root /srv/lab-e2t --json
+```
+
+目前 CLI 只管理项目目录和 registry，不会代替 Snakemake 调度分析任务。项目级 `validate/run/report`、容器和集群 profile 属于后续阶段。目录约定、数据边界和命令说明见 [实验室 CLI 指南](docs/lab-cli.md)。
+
 ## 获取 reads
 
-下载脚本读取 [SRR accession 清单](metadata/source/SRR_Acc_List.txt)，调用 SRA Toolkit 的 `prefetch`、`vdb-validate` 和 `fasterq-dump`，然后压缩并验证 FASTQ。先确认 SRA Toolkit 已在 `PATH`：
+下载脚本默认从活跃 samplesheet 提取有效 SRR/ERR/DRR，也可用 `--accessions` 指定子集，调用 SRA Toolkit 的 `prefetch`、`vdb-validate` 和 `fasterq-dump`，然后压缩并验证 FASTQ。先确认 SRA Toolkit 已在 `PATH`：
 
 ```bash
 prefetch --version
@@ -80,13 +98,13 @@ fasterq-dump --version
 python scripts/download_reads.py --dry-run
 ```
 
-下载并转换全部 8 个 runs：
+首次准备且文件尚不存在时，下载并转换活跃 runs（当前默认 8 个）：
 
 ```bash
 python scripts/download_reads.py --convert --threads 4
 ```
 
-网络或磁盘受限时，可先下载每个 condition × assay 各一个 library 的 4-run 演示集合：
+本次 8-run 已由用户确认下载完成，已有文件应直接校验。以下 4-run 仅作为首次准备其他实例时的可选子集示例：
 
 ```bash
 python scripts/download_reads.py \
@@ -108,12 +126,16 @@ python scripts/download_reads.py \
 每次实际运行前先 dry-run。例如完整 8-run 联合分析：
 
 ```bash
-snakemake --snakefile workflow/Snakefile \
-  --cores 4 --use-conda --config stage=integration --dry-run
+# 本机 Conda 23.9 不满足 Snakemake 自动部署的最低版本；使用已创建的隔离环境。
+export PATH="$PWD/.conda/riboseq/bin:$PWD/.conda/qc/bin:$PWD/.conda/salmon/bin:$PWD/.conda/rnaseq-stats/bin:$PATH"
+.venv/bin/snakemake --snakefile workflow/Snakefile \
+  --cores 4 --config stage=integration --dry-run
 
-snakemake --snakefile workflow/Snakefile \
-  --cores 4 --use-conda --config stage=integration
+.venv/bin/snakemake --snakefile workflow/Snakefile \
+  --cores 4 --config stage=integration
 ```
+
+在 Conda >=24.7.1 的机器上，可改用 `--use-conda` 让 Snakemake 按 `envs/*.yaml` 创建规则环境。
 
 4-run 演示集合使用独立 RNA/Ribo 配置，只生成描述性结果：
 
@@ -141,6 +163,8 @@ snakemake --snakefile workflow/Snakefile \
 | `results/provenance/` | 配置、输入、软件和产物的可追溯记录 |
 
 SQLite 只保存结构化结果和文件索引，不保存 FASTQ 或 BAM。
+
+旧 SQLite catalog 需保留并在新的 `paths.results` 目录重建为 schema v2，详见 [输入迁移说明](docs/data-input.md)。
 
 ## 合成端到端验收
 

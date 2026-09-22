@@ -12,7 +12,7 @@
 
 ```text
 当前实现：
-config + samples.tsv + source manifest + GEO/SRA metadata
+config + active samples.tsv (+ 显式 geo_sra 模式的 study/source evidence)
   → 只读 preflight（含 dry-run）
   → validate_metadata → results/validation/metadata.json
 
@@ -35,21 +35,21 @@ config + samples.tsv + source manifest + GEO/SRA metadata
 
 ## 数据契约
 
-`config/samples.tsv` 是项目的样本事实来源：
+`metadata/study_samples.tsv` 保存当前研究的原始 8-run 映射；`config/samples.tsv` 决定活跃输入。详见 [通用输入指南](data-input.md)。
 
 | 字段 | 约束 |
 | --- | --- |
 | `sample_id` | 唯一的项目内 library ID |
-| `run_accession` | 唯一 SRR，与选中 accession 清单完全一致 |
-| `geo_accession`、`biosample` | 当前数据一 library 对应一个 GSM/BioSample，与 CSV/SOFT 交叉校验 |
+| `run_accession` | 可选 SRR/ERR/DRR，非空值唯一 |
+| `geo_accession`、`biosample` | 可选；geo_sra 模式与 CSV/SOFT 交叉校验；同 assay BioSample 不重复计数 |
 | `assay` | `rnaseq` / `riboseq`，后者由 GEO 证据人工标注 |
-| `condition`、`replicate` | 在配置设计中且每个组合唯一；重复编号不表示跨 assay 配对 |
+| `condition`、`replicate` | condition 在配置中；replicate 为生物学重复标识；三元组唯一，不要求笛卡尔积或固定编号 |
 | `layout` | RNA PAIRED、Ribo SINGLE |
 | `fastq_1/2` | `paths.raw` 下的相对压缩 FASTQ 路径；PAIRED 两个不同路径，SINGLE 第二列为空 |
 
 样本表所有 FASTQ 路径必须唯一，禁止绝对路径和 `..` 路径穿越。
-source manifest 校验所有列出的本地来源文件，包括完整 GEO 元数据中未选择的 Aged 记录。
-源数据不做过滤改写；只有 samples.tsv 和 accession 清单决定本次分析范围。
+geo_sra 模式校验所有来源文件及完整 study 表，再检查活跃子集映射；local 模式不访问来源文件。
+源数据不按子集改写；活跃 samplesheet 与各分支 sample_ids 决定分析范围，下载清单不控制分析。
 
 ## 配置与质量门禁
 
@@ -70,7 +70,7 @@ RNA/Ribo 的 BioSample 不同，严格配对尚未确认。首先按 condition �
 描述性 TE 需明确 assay 内归一化、聚合顺序、计数区域、低表达过滤和 pseudocount。
 不直接把不同文库深度的原始 RNA/Ribo counts 比值作为可比较的 TE。
 RNA Salmon estimated counts 与 Ribo site counts 的定量含义须分别记录；模型与输入准备在分析分支中再验证。
-assay 内 DESeq2 和 differential TE 是不同问题，本阶段不产出显著性结论。
+RNA 的 DESeq2 由 run_deseq2 和设计门禁控制；联合 TE 不产出显著性结论。当前 RNA/integration 仅支持一个两组 contrast。
 
 ## 后续产物契约
 

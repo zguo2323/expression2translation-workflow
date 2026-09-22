@@ -20,9 +20,9 @@ CREATE TABLE IF NOT EXISTS "references" (
   manifest_sha256 TEXT NOT NULL CHECK(length(manifest_sha256)=64)
 );
 CREATE TABLE IF NOT EXISTS samples (
-  sample_id TEXT PRIMARY KEY, run_accession TEXT NOT NULL UNIQUE, geo_accession TEXT NOT NULL,
-  biosample TEXT NOT NULL, assay TEXT NOT NULL CHECK(assay IN ('rnaseq','riboseq')),
-  condition TEXT NOT NULL, replicate INTEGER NOT NULL CHECK(replicate>0),
+  sample_id TEXT PRIMARY KEY, run_accession TEXT UNIQUE, geo_accession TEXT,
+  biosample TEXT, assay TEXT NOT NULL CHECK(assay IN ('rnaseq','riboseq')),
+  condition TEXT NOT NULL, replicate TEXT NOT NULL CHECK(length(replicate)>0),
   layout TEXT NOT NULL CHECK(layout IN ('PAIRED','SINGLE'))
 );
 CREATE TABLE IF NOT EXISTS workflow_runs (
@@ -124,6 +124,21 @@ def nullable(value):
     return None if value == "" else float(value)
 
 
+def check_catalog_schema(database):
+    """Refuse legacy catalogs before any writes; rebuild into a new results path."""
+    database = Path(database)
+    if not database.exists():
+        return
+    connection = sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        tables = connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        require(not tables or version == 2,
+                "Legacy/incompatible SQLite catalog: keep this database and rebuild with paths.results set to a new directory (schema v2)")
+    finally:
+        connection.close()
+
+
 def build(task):
     analysis = json.loads(Path(task["integration_analysis"]).read_text())
     manifest = json.loads(Path(task["reference_manifest"]).read_text())
@@ -148,16 +163,18 @@ def build(task):
 
     database = Path(task["database"])
     database.parent.mkdir(parents=True, exist_ok=True)
+    check_catalog_schema(database)
     connection = sqlite3.connect(database)
     connection.execute("PRAGMA foreign_keys=ON")
     try:
         with connection:
             connection.executescript(SCHEMA)
+            connection.execute("PRAGMA user_version=2")
             connection.execute("INSERT INTO \"references\" VALUES (?,?,?,?) ON CONFLICT(reference_id) DO UPDATE SET provider=excluded.provider, release=excluded.release, manifest_sha256=excluded.manifest_sha256",
                                (reference_id, manifest["provider"], manifest["release"], sha256(Path(task["reference_manifest"]))))
             for row in selected.values():
                 connection.execute("INSERT INTO samples VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(sample_id) DO UPDATE SET run_accession=excluded.run_accession, geo_accession=excluded.geo_accession, biosample=excluded.biosample, assay=excluded.assay, condition=excluded.condition, replicate=excluded.replicate, layout=excluded.layout",
-                                   (row["sample_id"], row["run_accession"], row["geo_accession"], row["biosample"], row["assay"], row["condition"], int(row["replicate"]), row["layout"]))
+                                   (row["sample_id"], row.get("run_accession") or None, row.get("geo_accession") or None, row.get("biosample") or None, row["assay"], row["condition"], str(row["replicate"]), row["layout"]))
             connection.execute("INSERT INTO workflow_runs VALUES (?,?,?,?,?,?) ON CONFLICT(run_id) DO UPDATE SET generated_at=excluded.generated_at",
                                (run_id, datetime.now(timezone.utc).isoformat(), reference_id, config_sha, int(analysis["synthetic"]), "descriptive_condition"))
             for sample in expected_ids:
@@ -204,11 +221,12 @@ def build(task):
                                 "integration_metrics", "integration_contrasts", "artifacts")}
     finally:
         connection.close()
-    provenance = dict(run_id=run_id, generated_at=datetime.now(timezone.utc).isoformat(), reference_id=reference_id,
+    provenance = dict(schema_version=2, run_id=run_id, generated_at=datetime.now(timezone.utc).isoformat(), reference_id=reference_id,
                       synthetic=analysis["synthetic"], config_sha256=config_sha, database=str(database), counts=counts,
                       sqlite_integrity="ok", inputs_sha256={key: sha256(Path(task[key])) for key in
                           ("integration_analysis", "reference_manifest", "annotation", "rna_counts", "rna_tpm",
-                           "ribo_counts", "ribo_tpm", "condition_te", "te_contrast", "ribo_qc")},
+                           "ribo_counts", "ribo_tpm", "condition_te", "te_contrast", "te_candidate_qc",
+                           "differential_te_readiness", "ribo_qc")},
                       rna_qc_sha256={entry["sample_id"]: sha256(Path(entry["path"])) for entry in task["rna_qc"]},
                       artifact_inputs_sha256={entry["path"]: sha256(Path(entry["path"])) for entry in task["artifacts"]})
     target = Path(task["provenance"])

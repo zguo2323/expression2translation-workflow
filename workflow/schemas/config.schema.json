@@ -7,40 +7,60 @@
     "schema_version",
     "stage",
     "samples",
-    "source_manifest",
-    "sources",
     "dataset",
     "design",
     "paths",
     "resources",
     "reference",
     "preprocessing",
-    "integration"
+    "integration",
+    "source_validation"
   ],
   "properties": {
     "schema_version": {
       "const": 1
     },
     "stage": {
-      "enum": ["metadata", "qc", "rnaseq", "riboseq", "integration"]
+      "enum": [
+        "metadata",
+        "qc",
+        "rnaseq",
+        "riboseq",
+        "integration"
+      ]
     },
     "qc_config": {
       "type": "string",
       "minLength": 1
     },
-    "rna_config": {"type": "string", "minLength": 1},
-    "ribo_config": {"type": "string", "minLength": 1},
-    "integration_config": {"type": "string", "minLength": 1},
+    "rna_config": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ribo_config": {
+      "type": "string",
+      "minLength": 1
+    },
+    "integration_config": {
+      "type": "string",
+      "minLength": 1
+    },
     "samples": {
       "type": "string",
       "minLength": 1
     },
     "source_manifest": {
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1
     },
     "sources": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
       "required": [
         "accessions",
@@ -66,27 +86,32 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "geo",
-        "bioproject",
-        "sra_study",
         "organism"
       ],
       "properties": {
         "geo": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1
         },
         "bioproject": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1
         },
         "sra_study": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1
         },
         "organism": {
-          "type": "string",
-          "minLength": 1
+          "const": "Saccharomyces cerevisiae"
         }
       }
     },
@@ -95,7 +120,6 @@
       "additionalProperties": false,
       "required": [
         "conditions",
-        "replicates",
         "assays",
         "pairing",
         "integration_level"
@@ -103,7 +127,7 @@
       "properties": {
         "conditions": {
           "type": "array",
-          "minItems": 2,
+          "minItems": 1,
           "uniqueItems": true,
           "items": {
             "type": "string",
@@ -117,7 +141,8 @@
           "items": {
             "type": "integer",
             "minimum": 1
-          }
+          },
+          "description": "Deprecated compatibility field; does not constrain active libraries."
         },
         "assays": {
           "type": "object",
@@ -345,6 +370,66 @@
           "const": false
         }
       }
+    },
+    "source_validation": {
+      "enum": [
+        "local",
+        "geo_sra"
+      ]
+    },
+    "study_samples": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "source_validation": {
+            "const": "geo_sra"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "source_manifest",
+          "sources",
+          "study_samples"
+        ],
+        "properties": {
+          "source_manifest": {
+            "type": "string"
+          },
+          "dataset": {
+            "required": [
+              "geo",
+              "bioproject",
+              "sra_study"
+            ],
+            "properties": {
+              "geo": {
+                "type": "string"
+              },
+              "bioproject": {
+                "type": "string"
+              },
+              "sra_study": {
+                "type": "string"
+              }
+            }
+          },
+          "sources": {
+            "type": "object"
+          },
+          "study_samples": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
 }

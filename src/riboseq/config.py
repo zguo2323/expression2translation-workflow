@@ -4,11 +4,11 @@ from pathlib import Path
 import yaml
 
 from src.validation.reference import validate_rna_reference
-from src.validation.validate import require, relative_path
+from src.validation.validate import require, relative_path, select_samples
 
 
 KEYS = {"reference_manifest", "sample_ids", "synthetic", "strand_mode", "strand_evidence",
-        "offset_table", "offset_evidence", "min_mapq", "require_unique", "min_mapping_rate",
+        "footprint_lengths", "offset_table", "offset_evidence", "min_mapq", "require_unique", "min_mapping_rate",
         "max_rrna_fraction", "min_frame0_fraction", "metagene_upstream", "metagene_downstream"}
 
 
@@ -34,19 +34,17 @@ def load_ribo(config, samples):
     ribo = yaml.safe_load(path.read_text())
     require(isinstance(ribo, dict) and set(ribo) == KEYS, "Invalid Ribo config keys")
     require(type(ribo["synthetic"]) is bool, "Ribo synthetic must be boolean")
-    ids = ribo["sample_ids"]
-    require(isinstance(ids, list) and ids and len(ids) == len(set(ids)) and all(isinstance(x, str) for x in ids),
-            "Ribo sample_ids must be a non-empty unique list")
-    selected = {row["sample_id"]: row for row in samples if row["sample_id"] in ids}
-    require(set(selected) == set(ids), "Ribo sample_ids contains unknown sample")
-    require(all(row["assay"] == "riboseq" and row["layout"] == "SINGLE" for row in selected.values()),
-            "Ribo branch requires single-end riboseq libraries")
+    ribo["sample_ids"], selected = select_samples(ribo["sample_ids"], samples, "riboseq", "SINGLE")
     require(ribo["strand_mode"] in ("forward", "reverse", "unstranded") and isinstance(ribo["strand_evidence"], str)
             and ribo["strand_evidence"].strip(), "Ribo strand_mode/evidence unresolved")
     require(isinstance(ribo["offset_evidence"], str) and ribo["offset_evidence"].strip(), "Ribo offset evidence unresolved")
     require(isinstance(ribo["offset_table"], str) and ribo["offset_table"].strip(), "Ribo offset table unresolved")
     offset_path = relative_path(Path.cwd(), ribo["offset_table"])
     offsets = load_offsets(offset_path)
+    lengths = ribo["footprint_lengths"]
+    require(isinstance(lengths, list) and lengths and all(type(length) is int and length > 0 for length in lengths)
+            and len(lengths) == len(set(lengths)), "Ribo footprint_lengths must be a non-empty list of unique positive integers")
+    require(set(lengths) == set(offsets), "Ribo footprint_lengths must exactly match offset table read lengths")
     for key in ("min_mapq", "metagene_upstream", "metagene_downstream"):
         require(type(ribo[key]) is int and ribo[key] >= 0, f"Invalid Ribo {key}")
     require(type(ribo["require_unique"]) is bool, "require_unique must be boolean")

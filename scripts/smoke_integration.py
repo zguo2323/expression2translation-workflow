@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Run a synthetic RNA+Ribo dataset through the complete E2T MVP."""
 import argparse
-import csv
 import gzip
 import json
 import os
@@ -12,6 +11,8 @@ import sqlite3
 import subprocess
 import sys
 import yaml
+
+from synthetic_inputs import write_samples
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -60,33 +61,32 @@ def smoke(args):
     manifest = json.loads((target / manifest_path).read_text())
     config = yaml.safe_load((target / "config/config.yaml").read_text())
     config["stage"] = "integration"
+    samples = write_samples(target, config)
     config["reference"] = {key: manifest[key] for key in ("reference_id", "provider", "release")}
     config["reference"].update({role: manifest["files"][role]["path"] for role in ("genome", "annotation", "transcriptome", "rrna")})
     (target / "config/config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     rna = yaml.safe_load((target / "config/rnaseq.yaml").read_text())
-    rna.update(reference_manifest=manifest_path, synthetic=True, library_type="ISF",
-               library_evidence="synthetic inward-facing transcript-oriented fragments", run_deseq2=False,
+    rna.update(sample_ids=[], reference_manifest=manifest_path, synthetic=True, library_type="ISF",
+               library_evidence="synthetic inward-facing transcript-oriented fragments", contrast=["condition", "Middle", "Young"], run_deseq2=False,
                design_confirmed=False, design_evidence=None, min_samples=2)
     (target / "config/rnaseq.yaml").write_text(yaml.safe_dump(rna, sort_keys=False))
     (target / "config/synthetic_psite_offsets.tsv").write_text("read_length\tpsite_offset\n28\t12\n")
     ribo = yaml.safe_load((target / "config/riboseq.yaml").read_text())
-    ribo.update(reference_manifest=manifest_path, synthetic=True, strand_mode="forward",
+    ribo.update(sample_ids=[], reference_manifest=manifest_path, synthetic=True, strand_mode="forward",
                 strand_evidence="synthetic transcript-oriented reads", offset_table="config/synthetic_psite_offsets.tsv",
-                offset_evidence="synthetic frame-0 P-sites", min_mapping_rate=0.9,
+                offset_evidence="synthetic frame-0 P-sites", footprint_lengths=[28], min_mapping_rate=0.9,
                 max_rrna_fraction=0.2, min_frame0_fraction=0.95)
     (target / "config/riboseq.yaml").write_text(yaml.safe_dump(ribo, sort_keys=False))
     integration = yaml.safe_load((target / "config/integration.yaml").read_text())
-    integration.update(synthetic=True, min_rna_tpm=1.0, min_ribo_tpm=1.0, report_title="Synthetic E2T end-to-end report")
+    integration.update(synthetic=True, contrast=["Middle", "Young"], min_rna_tpm=1.0, min_ribo_tpm=1.0, report_title="Synthetic E2T end-to-end report")
     (target / "config/integration.yaml").write_text(yaml.safe_dump(integration, sort_keys=False))
     qc = yaml.safe_load((target / "config/qc.yaml").read_text())
-    qc.update(mode="trim", synthetic=True)
+    qc.update(mode="trim", synthetic=True, sample_ids=[])
     qc["policies"]["rnaseq"].update(confirmed=True, evidence="synthetic reads without adapters/barcodes",
         adapter_mode="none", barcode_mode="none", min_length=50)
     qc["policies"]["riboseq"].update(confirmed=True, evidence="synthetic 28 nt reads without adapters/barcodes",
         adapter_mode="none", barcode_mode="none", min_length=20)
     (target / "config/qc.yaml").write_text(yaml.safe_dump(qc, sort_keys=False))
-    with (target / "config/samples.tsv").open() as handle:
-        samples = list(csv.DictReader(handle, delimiter="\t"))
     for sample_index, sample in enumerate(samples):
         first = target / sample["fastq_1"]
         first.parent.mkdir(parents=True, exist_ok=True)
@@ -136,6 +136,7 @@ def smoke(args):
     try:
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         assert connection.execute("SELECT count(*) FROM run_samples").fetchone()[0] == 8
+        assert connection.execute("SELECT count(*) FROM samples WHERE run_accession IS NULL AND geo_accession IS NULL AND biosample IS NULL").fetchone()[0] == 8
         assert connection.execute("SELECT count(*) FROM integration_metrics").fetchone()[0] == 100
         positive = connection.execute("SELECT gene_id,te_log2_change FROM integration_contrasts WHERE eligible=1 ORDER BY te_log2_change DESC LIMIT 5").fetchall()
         assert {gene for gene, _ in positive} == {f"gene{i:03}" for i in range(5)} and all(value > 1 for _, value in positive)

@@ -2,6 +2,7 @@
 import argparse
 from collections import defaultdict
 import csv
+import itertools
 import json
 import math
 from pathlib import Path
@@ -70,6 +71,104 @@ def mean(values):
     return sum(values) / len(values)
 
 
+def descriptive_change(rna_by_condition, ribo_by_condition, cfg, pseudocount=None):
+    """Return a condition contrast from already-normalized per-sample values."""
+    pseudocount = cfg["pseudocount"] if pseudocount is None else pseudocount
+    numerator, denominator = cfg["contrast"]
+    values = {}
+    for condition in (numerator, denominator):
+        rna_mean, ribo_mean = mean(rna_by_condition[condition]), mean(ribo_by_condition[condition])
+        if rna_mean < cfg["min_rna_tpm"] or ribo_mean < cfg["min_ribo_tpm"]:
+            return None
+        values[condition] = (rna_mean, ribo_mean)
+    top, base = values[numerator], values[denominator]
+    return math.log2((top[1] + pseudocount) / (top[0] + pseudocount)) - \
+        math.log2((base[1] + pseudocount) / (base[0] + pseudocount))
+
+
+def consistent_sign(values):
+    """Require every sensitivity value to be available and to retain one sign."""
+    return bool(values) and all(value is not None for value in values) and \
+        (all(value > 0 for value in values) or all(value < 0 for value in values))
+
+
+def sensitivity_rows(shared, rna_tpm, ribo_tpm, ribo_counts, rna_samples, ribo_samples,
+                     rna_conditions, ribo_conditions, cfg):
+    """Expose count support and one-library-removed TE sensitivity per gene."""
+    conditions = cfg["contrast"]
+    rna_groups = {condition: [sample for sample in rna_samples if rna_conditions[sample] == condition]
+                  for condition in conditions}
+    ribo_groups = {condition: [sample for sample in ribo_samples if ribo_conditions[sample] == condition]
+                   for condition in conditions}
+    # A singleton group has no valid leave-one-out result; retain it in the
+    # descriptive output but never call it sensitivity-stable.
+    removal_sets = [("rna", condition, sample) for condition, samples in rna_groups.items()
+                    if len(samples) >= 2 for sample in samples]
+    removal_sets += [("ribo", condition, sample) for condition, samples in ribo_groups.items()
+                     if len(samples) >= 2 for sample in samples]
+    rows = []
+    for gene in shared:
+        rna_values = {condition: [rna_tpm[gene][sample] for sample in samples]
+                      for condition, samples in rna_groups.items()}
+        ribo_values = {condition: [ribo_tpm[sample][gene] for sample in samples]
+                       for condition, samples in ribo_groups.items()}
+        baseline = descriptive_change(rna_values, ribo_values, cfg)
+        pseudocount_values = [descriptive_change(rna_values, ribo_values, cfg, value)
+                              for value in cfg["candidate_pseudocounts"]]
+        leave_one_out = []
+        for assay, condition, sample in removal_sets:
+            rna_loo = {key: list(values) for key, values in rna_values.items()}
+            ribo_loo = {key: list(values) for key, values in ribo_values.items()}
+            if assay == "rna":
+                rna_loo[condition] = [rna_tpm[gene][sid] for sid in rna_groups[condition] if sid != sample]
+            else:
+                ribo_loo[condition] = [ribo_tpm[sid][gene] for sid in ribo_groups[condition] if sid != sample]
+            leave_one_out.append(descriptive_change(rna_loo, ribo_loo, cfg))
+        counts = [ribo_counts[sample][gene] for sample in ribo_samples]
+        count_supported = min(counts) >= cfg["candidate_min_ribo_psites_per_sample"]
+        stable = consistent_sign(pseudocount_values) and consistent_sign(leave_one_out)
+        rows.append(dict(gene_id=gene, eligible=baseline is not None,
+                         min_ribo_psites_all_samples=min(counts),
+                         ribo_samples_passing_count_gate=sum(count >= cfg["candidate_min_ribo_psites_per_sample"] for count in counts),
+                         count_supported=count_supported, te_change=baseline,
+                         pseudocount_sign_consistent=consistent_sign(pseudocount_values),
+                         loo_sign_consistent=consistent_sign(leave_one_out),
+                         candidate_stable=count_supported and stable,
+                         te_change_pseudocount_min=min(pseudocount_values) if pseudocount_values and all(value is not None for value in pseudocount_values) else None,
+                         te_change_pseudocount_max=max(pseudocount_values) if pseudocount_values and all(value is not None for value in pseudocount_values) else None,
+                         te_change_loo_min=min(leave_one_out) if leave_one_out and all(value is not None for value in leave_one_out) else None,
+                         te_change_loo_max=max(leave_one_out) if leave_one_out and all(value is not None for value in leave_one_out) else None))
+    return rows
+
+
+def differential_te_readiness(rna_samples, ribo_samples, rna_conditions, ribo_conditions,
+                              sensitivity, ribo_qc, cfg):
+    """Document why a model is, or is not, safe to add for this particular run."""
+    conditions = cfg["contrast"]
+    group_sizes = {f"rna:{condition}": sum(rna_conditions[sample] == condition for sample in rna_samples)
+                   for condition in conditions}
+    group_sizes.update({f"ribo:{condition}": sum(ribo_conditions[sample] == condition for sample in ribo_samples)
+                        for condition in conditions})
+    assigned = {row["sample_id"]: int(row["assigned_cds_psites"]) for row in ribo_qc}
+    rrna = {row["sample_id"]: float(row["rrna_fraction"]) for row in ribo_qc}
+    supported = sum(row["eligible"] and row["count_supported"] for row in sensitivity)
+    reasons = []
+    if min(group_sizes.values()) < 3:
+        reasons.append("fewer_than_three_biological_replicates_per_assay_condition")
+    if min(assigned.values()) < 500_000:
+        reasons.append("one_or_more_ribo_libraries_have_fewer_than_500000_assigned_cds_psites")
+    if max(rrna.values()) > 0.90:
+        reasons.append("ribo_rrna_fraction_exceeds_90_percent")
+    if supported < 1_000:
+        reasons.append("fewer_than_1000_genes_pass_the_per_sample_ribo_count_gate")
+    return dict(model="assay_by_condition_negative_binomial_interaction", status="not_run",
+                recommended=not reasons, conditions=conditions, group_sizes=group_sizes,
+                count_supported_genes=supported, candidate_count_gate=cfg["candidate_min_ribo_psites_per_sample"],
+                ribo_assigned_cds_psites=assigned, ribo_rrna_fraction=rrna, blocking_reasons=reasons,
+                interpretation=("A differential-TE model should use replicate-level raw counts with assay-aware normalization "
+                                "and report an assay×condition interaction, not a t-test on condition-level TE."))
+
+
 def integrate(task):
     output = Path(task["directory"])
     output.mkdir(parents=True, exist_ok=True)
@@ -79,12 +178,17 @@ def integrate(task):
     ribo_expected_conditions = {row["sample_id"]: row["condition"] for row in task["ribo_samples"]}
     rna_raw_tpm = read_matrix(task["rna_tpm"], rna_samples)
     rna_counts = read_matrix(task["rna_counts"], rna_samples)
-    rna_tpm = normalize_per_million(rna_raw_tpm, rna_samples)
     ribo_counts, cds_lengths, ribo_conditions = read_ribo(task["ribo_counts"], ribo_samples)
     require(ribo_conditions == ribo_expected_conditions, "Ribo result conditions disagree with samples.tsv")
-    ribo_tpm = ribo_cds_tpm(ribo_counts, cds_lengths)
-    shared = sorted(set(rna_tpm).intersection(cds_lengths))
+    shared = sorted(set(rna_raw_tpm).intersection(cds_lengths))
     require(shared, "RNA and Ribo have no shared gene IDs")
+    # Scale both assays over the same coding-gene universe. RNA-only rRNA and
+    # other biotypes must not change the denominator used for descriptive TE.
+    rna_shared = {gene: rna_raw_tpm[gene] for gene in shared}
+    ribo_shared = {sample: {gene: values[gene] for gene in shared} for sample, values in ribo_counts.items()}
+    shared_lengths = {gene: cds_lengths[gene] for gene in shared}
+    rna_tpm = normalize_per_million(rna_shared, rna_samples)
+    ribo_tpm = ribo_cds_tpm(ribo_shared, shared_lengths)
     conditions = task["config"]["contrast"]
     for condition in conditions:
         require(any(value == condition for value in rna_conditions.values()), f"Missing RNA condition: {condition}")
@@ -145,14 +249,42 @@ def integrate(task):
         for row in contrast_rows:
             writer.writerow({key: (str(value).lower() if isinstance(value, bool) else "" if value is None else
                                    f"{value:.10f}" if isinstance(value, float) else value) for key, value in row.items()})
+    sensitivity = sensitivity_rows(shared, rna_tpm, ribo_tpm, ribo_shared, rna_samples, ribo_samples,
+                                   rna_conditions, ribo_conditions, cfg)
+    with (output / "te_candidate_qc.tsv").open("w", newline="") as handle:
+        fields = ["gene_id", "eligible", "min_ribo_psites_all_samples", "ribo_samples_passing_count_gate",
+                  "count_supported", "te_change", "pseudocount_sign_consistent", "loo_sign_consistent",
+                  "candidate_stable", "te_change_pseudocount_min", "te_change_pseudocount_max",
+                  "te_change_loo_min", "te_change_loo_max"]
+        writer = csv.DictWriter(handle, fields, delimiter="\t", lineterminator="\n")
+        writer.writeheader()
+        for row in sensitivity:
+            writer.writerow({key: (str(value).lower() if isinstance(value, bool) else "" if value is None else
+                                   str(int(value)) if key in ("min_ribo_psites_all_samples", "ribo_samples_passing_count_gate") else
+                                   f"{value:.10f}" if isinstance(value, float) else value) for key, value in row.items()})
+    ribo_qc = []
+    with Path(task["ribo_qc"]).open() as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        require(reader.fieldnames == ["sample_id", "condition", "input_reads", "rrna_fraction", "mapping_rate",
+                                      "assigned_cds_psites", "frame0_fraction"], "Invalid Ribo QC header")
+        ribo_qc = list(reader)
+    require({row["sample_id"] for row in ribo_qc} == set(ribo_samples), "Ribo QC samples disagree with integration")
+    readiness = differential_te_readiness(rna_samples, ribo_samples, rna_conditions, ribo_conditions,
+                                          sensitivity, ribo_qc, cfg)
+    (output / "differential_te_readiness.json").write_text(json.dumps(readiness, indent=2) + "\n")
     summary = dict(reference_id=task["reference_id"], synthetic=cfg["synthetic"], method="descriptive_condition_level",
                    config=cfg, conditions=conditions, rna_samples=rna_samples, ribo_samples=ribo_samples,
-                   rna_genes=len(rna_tpm), ribo_genes=len(cds_lengths), shared_genes=len(shared),
+                   rna_input_genes=len(rna_raw_tpm), ribo_input_genes=len(cds_lengths),
+                   rna_genes=len(rna_tpm), ribo_genes=len(shared_lengths), shared_genes=len(shared),
+                   normalization_universe="shared_coding_genes",
                    eligible_condition_rows=sum(row["eligible"] for row in condition_rows),
                    eligible_contrast_genes=sum(row["eligible"] for row in contrast_rows),
-                   no_pairing_assumed=True, differential_te=False,
-                   inputs_sha256={key: sha256(Path(task[key])) for key in ("rna_tpm", "rna_counts", "ribo_counts", "reference_manifest", "config_file")})
-    artifacts = [output / name for name in ("rna_sample_tpm.tsv", "ribo_sample_cds_tpm.tsv", "condition_te.tsv", "te_contrast.tsv")]
+                   candidate_count_supported_genes=sum(row["eligible"] and row["count_supported"] for row in sensitivity),
+                   candidate_stable_genes=sum(row["eligible"] and row["candidate_stable"] for row in sensitivity),
+                   no_pairing_assumed=True, differential_te=False, differential_te_readiness=readiness,
+                   inputs_sha256={key: sha256(Path(task[key])) for key in ("rna_tpm", "rna_counts", "ribo_counts", "ribo_qc", "reference_manifest", "config_file")})
+    artifacts = [output / name for name in ("rna_sample_tpm.tsv", "ribo_sample_cds_tpm.tsv", "condition_te.tsv", "te_contrast.tsv",
+                                            "te_candidate_qc.tsv", "differential_te_readiness.json")]
     summary["artifacts_sha256"] = {str(path): sha256(path) for path in artifacts}
     (output / "analysis.json").write_text(json.dumps(summary, indent=2) + "\n")
 

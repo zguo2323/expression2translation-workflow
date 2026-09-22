@@ -1,5 +1,6 @@
 """Render self-contained Markdown and HTML reports from the SQLite catalog."""
 import argparse
+import csv
 from datetime import datetime, timezone
 import html
 import json
@@ -65,15 +66,39 @@ def build(task):
         summary = connection.execute("SELECT count(*) AS rows,sum(eligible) AS eligible,count(DISTINCT gene_id) AS genes FROM integration_metrics WHERE run_id=?", (run_id,)).fetchone()
         contrast_name = connection.execute("SELECT contrast FROM integration_contrasts WHERE run_id=? LIMIT 1", (run_id,)).fetchone()[0]
         top = connection.execute("SELECT gene_id,te_log2_change,rna_log2_change,ribo_log2_change FROM integration_contrasts WHERE run_id=? AND eligible=1 ORDER BY abs(te_log2_change) DESC,gene_id LIMIT 15", (run_id,)).fetchall()
+        eligible = connection.execute("SELECT gene_id,te_log2_change,rna_log2_change,ribo_log2_change FROM integration_contrasts WHERE run_id=? AND eligible=1 ORDER BY abs(te_log2_change) DESC,gene_id", (run_id,)).fetchall()
+        raw_ribo = connection.execute("SELECT gene_id,sample_id,p_site_count FROM ribo_gene_metrics WHERE run_id=?", (run_id,)).fetchall()
         artifacts = connection.execute("SELECT kind,path,sha256,bytes FROM artifacts WHERE run_id=? ORDER BY kind,path", (run_id,)).fetchall()
         reference = connection.execute("SELECT * FROM \"references\" WHERE reference_id=?", (run["reference_id"],)).fetchone()
     finally:
         connection.close()
     config = task["config"]
+    integration_dir = Path(task["integration_analysis"]).parent
+    with (integration_dir / "te_candidate_qc.tsv").open() as handle:
+        candidate_qc = {row["gene_id"]: row for row in csv.DictReader(handle, delimiter="\t")}
+    readiness = json.loads((integration_dir / "differential_te_readiness.json").read_text())
+    readiness_labels = {
+        "fewer_than_three_biological_replicates_per_assay_condition": "每个 assay × condition 少于 3 个生物学重复。",
+        "one_or_more_ribo_libraries_have_fewer_than_500000_assigned_cds_psites": "至少一个 Ribo library 少于 500,000 个 CDS P-sites。",
+        "ribo_rrna_fraction_exceeds_90_percent": "Ribo rRNA fraction 超过 90%。",
+        "fewer_than_1000_genes_pass_the_per_sample_ribo_count_gate": "通过每样本 Ribo 计数门槛的基因少于 1,000 个。",
+    }
+    readiness_reasons = [readiness_labels.get(reason, reason) for reason in readiness["blocking_reasons"]]
+    psite_counts = {(row["gene_id"], row["sample_id"]): row["p_site_count"] for row in raw_ribo}
     qc_rows = [[row["sample_id"], row["stage"], row["total_reads"], row["retained_reads"], fmt(row["mapping_rate"]),
                 fmt(row["rrna_fraction"]), fmt(row["frame0_fraction"])] for row in qc]
-    sample_rows = [[row["sample_id"], row["run_accession"], row["assay"], row["condition"], row["replicate"]] for row in samples]
-    top_rows = [[row["gene_id"], fmt(row["te_log2_change"]), fmt(row["rna_log2_change"]), fmt(row["ribo_log2_change"])] for row in top]
+    sample_rows = [[row["sample_id"], row["run_accession"] or "—", row["assay"], row["condition"], row["replicate"]] for row in samples]
+    ribo_samples = [row["sample_id"] for row in samples if row["assay"] == "riboseq"]
+    candidate_headers = ["Gene", "ΔTE log2", "RNA log2 change", "Ribo log2 change", "Min Ribo P-sites",
+                         "Count-supported", "PC sign stable", "Leave-one-out sign stable", *ribo_samples]
+    def evidence_row(row):
+        evidence = candidate_qc[row["gene_id"]]
+        return [row["gene_id"], fmt(row["te_log2_change"]), fmt(row["rna_log2_change"]), fmt(row["ribo_log2_change"]),
+                evidence["min_ribo_psites_all_samples"], evidence["count_supported"],
+                evidence["pseudocount_sign_consistent"], evidence["loo_sign_consistent"],
+                *(fmt(psite_counts[(row["gene_id"], sample)], 0) for sample in ribo_samples)]
+    top_rows = [evidence_row(row) for row in top]
+    stable_rows = [evidence_row(row) for row in eligible if candidate_qc[row["gene_id"]]["candidate_stable"] == "true"][:15]
     artifact_rows = [[row["kind"], row["path"], row["bytes"], row["sha256"]] for row in artifacts]
     group_counts = {}
     for row in samples:
@@ -82,6 +107,12 @@ def build(task):
     replication_limit = ("- At least one assay/condition has only one library, so biological variance cannot be estimated."
                          if limited_replication else
                          "- This run has at least two libraries per assay/condition, but the current TE method remains descriptive and does not fit a differential-TE model.")
+    rrna_fractions = [row["rrna_fraction"] for row in qc if row["rrna_fraction"] is not None]
+    data_limit = ("- Synthetic output validates software behavior only and has no biological interpretation."
+                  if run["synthetic"] else
+                  (f"- Ribo rRNA fraction is {min(rrna_fractions):.2%}--{max(rrna_fractions):.2%}; interpret the descriptive TE values with this contamination and the remaining effective depth in mind."
+                   if rrna_fractions else
+                   "- This is a real-data run; interpret descriptive TE values with the QC metrics above."))
     title = config["report_title"] + (" — SYNTHETIC TEST" if run["synthetic"] else "")
     generated = datetime.now(timezone.utc).isoformat()
     sections = [f"# {title}", "", f"Generated: `{generated}`  ", f"Run: `{run_id}`  ",
@@ -94,12 +125,20 @@ def build(task):
                 "## QC summary", "", md_table(["Sample", "Stage", "Input", "Retained/assigned", "Mapping", "rRNA", "Frame 0"], qc_rows), "",
                 "## Integration summary", "", f"- Shared genes: {summary['genes']}", f"- Condition × gene rows: {summary['rows']}",
                 f"- Rows passing both expression gates: {summary['eligible']}", f"- Contrast: `{contrast_name}` (descriptive numerator minus denominator)", "",
-                "## Largest absolute descriptive TE changes", "", md_table(["Gene", "ΔTE log2", "RNA log2 change", "Ribo log2 change"], top_rows), "",
+                "## Largest absolute descriptive TE changes", "",
+                "These rows are ranked by magnitude only. The raw Ribo P-site columns and sensitivity flags show why a large descriptive change is not automatically a candidate.", "",
+                md_table(candidate_headers, top_rows), "",
+                "## Count-supported, sensitivity-stable descriptive candidates", "",
+                f"Candidate gate: at least {config['candidate_min_ribo_psites_per_sample']} P-sites in every Ribo library; direction must remain unchanged across pseudocounts {config['candidate_pseudocounts']} and after removing each individual RNA or Ribo library. This remains descriptive, not a significance test.", "",
+                md_table(candidate_headers, stable_rows) if stable_rows else "No genes passed all candidate evidence and sensitivity gates.", "",
+                "## Differential-TE model readiness", "",
+                f"Status: `{readiness['status']}`. Count-supported genes: {readiness['count_supported_genes']}. A replicate-level assay×condition model was not run for this dataset.", "",
+                *(f"- {reason}" for reason in readiness_reasons), "",
                 "## Reproducibility artifacts", "", md_table(["Kind", "Path", "Bytes", "SHA-256"], artifact_rows), "",
                 "## Limitations", "", "- Cross-assay biological pairing is unconfirmed; replicate numbers are not pair IDs.",
                 replication_limit,
                 "- TE depends on the stated normalization, CDS definition, low-expression thresholds and pseudocount.",
-                "- Synthetic output validates software behavior only and has no biological interpretation.", ""]
+                data_limit, ""]
     markdown = "\n".join(sections)
     (output / "report.md").write_text(markdown)
     plot_rows = [(row["gene_id"], row["te_log2_change"]) for row in reversed(top[:12])]
@@ -111,13 +150,17 @@ def build(task):
 <h2>Selected libraries</h2>{html_table(['Sample','Run','Assay','Condition','Replicate'],sample_rows)}
 <h2>QC summary</h2>{html_table(['Sample','Stage','Input','Retained/assigned','Mapping','rRNA','Frame 0'],qc_rows)}
 <h2>Integration summary</h2><ul><li>Shared genes: {summary['genes']}</li><li>Condition × gene rows: {summary['rows']}</li><li>Rows passing both gates: {summary['eligible']}</li><li>Contrast: <code>{html.escape(contrast_name)}</code></li></ul>
-<h2>Largest absolute descriptive TE changes</h2><img src="te_changes.svg" alt="Descriptive TE change bar chart">{html_table(['Gene','ΔTE log2','RNA log2 change','Ribo log2 change'],top_rows)}
+<h2>Largest absolute descriptive TE changes</h2><p>These rows are ranked by magnitude only. Raw Ribo P-site counts and sensitivity flags show whether a large descriptive change has enough support for follow-up.</p><img src="te_changes.svg" alt="Descriptive TE change bar chart">{html_table(candidate_headers,top_rows)}
+<h2>Count-supported, sensitivity-stable descriptive candidates</h2><p>Gate: at least {config['candidate_min_ribo_psites_per_sample']} P-sites in every Ribo library; sign stable across pseudocounts {html.escape(str(config['candidate_pseudocounts']))} and after removing each individual RNA or Ribo library. This is not a significance test.</p>{html_table(candidate_headers,stable_rows) if stable_rows else '<p>No genes passed all candidate evidence and sensitivity gates.</p>'}
+<h2>Differential-TE model readiness</h2><p>Status: <code>{html.escape(readiness['status'])}</code>. Count-supported genes: {readiness['count_supported_genes']}. A replicate-level assay×condition model was not run for this dataset.</p><ul>{''.join(f'<li>{html.escape(reason)}</li>' for reason in readiness_reasons)}</ul>
 <h2>Reproducibility artifacts</h2>{html_table(['Kind','Path','Bytes','SHA-256'],artifact_rows)}
-<h2>Limitations</h2><ul><li>Cross-assay pairing is unconfirmed.</li><li>{html.escape(replication_limit[2:])}</li><li>TE depends on normalization, CDS definition, filtering and pseudocount.</li><li>Synthetic results have no biological interpretation.</li></ul></body></html>"""
+<h2>Limitations</h2><ul><li>Cross-assay pairing is unconfirmed.</li><li>{html.escape(replication_limit[2:])}</li><li>TE depends on normalization, CDS definition, filtering and pseudocount.</li><li>{html.escape(data_limit[2:])}</li></ul></body></html>"""
     (output / "report.html").write_text(html_doc)
     manifest = dict(run_id=run_id, generated_at=generated, synthetic=bool(run["synthetic"]),
                     inputs_sha256={"database": sha256(database), "catalog_provenance": sha256(Path(task["catalog_provenance"])),
-                                   "integration_analysis": sha256(Path(task["integration_analysis"]))},
+                                   "integration_analysis": sha256(Path(task["integration_analysis"])),
+                                   "te_candidate_qc": sha256(integration_dir / "te_candidate_qc.tsv"),
+                                   "differential_te_readiness": sha256(integration_dir / "differential_te_readiness.json")},
                     artifacts_sha256={name: sha256(output / name) for name in ("report.md", "report.html", "te_changes.svg")})
     (output / "report_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 

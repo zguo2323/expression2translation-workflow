@@ -3,7 +3,7 @@
 ## 当前功能
 
 - `stage=metadata` 仍为默认值，未下载 FASTQ 时可运行。
-- `stage=qc` 读取 `config/qc.yaml`，仅运行其中的 `sample_ids`；空列表表示全部 8 个。
+- `stage=qc` 读取 `config/qc.yaml`，仅运行其中的 `sample_ids`；空列表表示全部活跃 libraries，数量不固定。
 - `mode=raw`：逐样本完整 FASTQ/gzip 校验 → raw FastQC → MultiQC。
 - `mode=trim`：上述步骤 + fastp → trimmed FASTQ 校验 → trimmed FastQC → MultiQC。
 
@@ -11,7 +11,9 @@ paired-end 校验完整扫描两端，检查记录格式、非空、序列/质�
 当前 FASTQ 解析契约是常见的每条 4 行 ASCII FASTQ，序列只接受 A/C/G/T/N；异常文件会失败，不尝试自动修复。
 这些检查不代表 reads 已通过生物学 QC，也不判断平台的质量编码或 adapter/strandedness。
 
-## 第一个 run 下载完成后
+默认真实实例为全部 8-run；外部获取的 FASTQ 不需要下载器 completed manifest。分析阶段 QC 自动跟随 RNA/Ribo 解析后的样本集合，非空 QC 子集若不一致则报错。参见 [输入指南](data-input.md)。
+
+## 选择 QC 输入
 
 将 `config/qc.yaml` 中的样本选择改为已经完整转换的样本，例如：
 
@@ -32,7 +34,7 @@ conda run --no-capture-output --prefix .conda/qc .venv/bin/snakemake --cores 2 -
 具备 Conda >=24.7.1 时，也可激活 workflow 环境后使用 `snakemake --cores 2 --config stage=qc --use-conda`，让规则声明的 `envs/qc.yaml` 自动部署。本机 Conda 23.9 使用前述显式环境方式。
 本次本地实测使用前一种共享 QC 环境方式。
 
-预处理参数的执行事实来源是 `config/qc.yaml` 的 `policies`；原始 config 中的 `preprocessing` 待定项保留为后续方法调查清单，不会自动转成 fastp 参数。
+预处理参数的执行事实来源是 `config/qc.yaml` 的 `policies`；`config/config.yaml` 的 `preprocessing` 仅记录研究级摘要，不会自动转成 fastp 参数。当前 GSE203147 policy 已由 raw QC、分散抽样诊断及 RNA fastp/Salmon pilot 确认。
 只有需要运行的 assay 必须设置 `confirmed: true` 并提供 `evidence`，明确 adapter 序列或已确认无需去 adapter、barcode 策略、前端裁剪长度、最短长度和质量过滤阈值。
 当前只支持无 barcode 处理或固定前端裁剪，未知 barcode sorting/UMI 方案必须先核实和扩展实现。
 禁用 fastp 的自动 poly-G 裁剪，避免工具依据 read header 隐式改变行为；不启用去重、合并或纠错。
@@ -59,7 +61,7 @@ conda run --no-capture-output --prefix .conda/qc .venv/bin/python scripts/smoke_
 ```
 
 脚本复制工作流到全新隔离目录，只生成 1 个 RNA PE 和 1 个 Ribo SE 的 synthetic FASTQ，各 200 个 records/pairs。
-元数据仍用于测试现有样本接口；合成序列不能冒充对应 GEO 样本。MultiQC 标题和 provenance 标明 SYNTHETIC TEST。
+脚本自行生成 local 模式样本表，不读取真实活跃表的设计，不使用真实 GEO/SRA 身份。MultiQC 标题和 provenance 标明 SYNTHETIC TEST。
 检查 dry-run、真实工具输出、已知前缀/adapter 去除、reads/base 数量、MultiQC 解析模块及无修改重跑。
 已有 smoke 目录不会覆盖，请指定新目录。
 GitHub Actions 配置已提供；本地通过不代表 GitHub 上已经执行 CI。

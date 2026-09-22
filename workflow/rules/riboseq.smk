@@ -3,7 +3,7 @@ RIBO_CODE = ["src/riboseq/run.py", "src/riboseq/config.py", "src/riboseq/feature
              "src/validation/reference.py", "src/validation/sequences.py"]
 RIBO_REF = RIBO_REFERENCE["files"]
 RIBO_SETTINGS = {key: RIBO[key] for key in ("strand_mode", "strand_evidence", "offset_table", "offset_evidence",
-    "min_mapq", "require_unique", "min_mapping_rate", "max_rrna_fraction", "min_frame0_fraction",
+    "footprint_lengths", "min_mapq", "require_unique", "min_mapping_rate", "max_rrna_fraction", "min_frame0_fraction",
     "metagene_upstream", "metagene_downstream", "synthetic")}
 
 rule ribo_rrna_index:
