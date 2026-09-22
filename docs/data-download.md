@@ -1,6 +1,7 @@
 # 第一阶段之后：实际数据下载交接
 
-仅下载 `metadata/source/SRR_Acc_List.txt` 中的 8 个 runs。仓库不分发 raw reads。
+下载是可选工具，默认从活跃 samplesheet 的有效 run_accession 生成计划；支持 SRR/ERR/DRR 和显式 accession 子集。自有 FASTQ 无需调用下载器，见 [输入指南](data-input.md)。
+本次默认完整 8-run；用户已确认下载完成，文件验收与方法确认另行记录。仓库不分发 raw reads。
 `metadata/source/GSE203147_RAW.tar` 是作者已处理计数表，不能代替本项目的 raw FASTQ。
 
 ## 存放位置
@@ -47,7 +48,7 @@
 .venv/bin/python scripts/download_reads.py --run SRR19240765
 ```
 
-按 accession 清单依次下载（某个失败就停止）：
+按活跃 samplesheet 依次下载（某个失败就停止）：
 
 ```bash
 .venv/bin/python scripts/download_reads.py
@@ -65,16 +66,17 @@
 遇到已有 SRA lock 会停止并要求检查，不强制删除锁或已有下载。
 
 日志追加写入 `logs/download/`，每个 run 有状态 JSON。完整转换产物另有 `.completed.json`，包含路径、数量、大小、SHA-256；重跑校验摘要一致后跳过。
-已有 FASTQ 没有完成记录时拒绝覆盖；下载完成不等于转换完成。
+已有 FASTQ 没有完成记录时，在网络/转换开始前拒绝覆盖；它仍可直接进入统一 reads 校验及 QC。ENA MD5 只比对对应 ENA 原始压缩文件，不能用于要求 SRA 本地重压缩产物一致。
+显式清单中的每个 run 必须有样本映射，格式、唯一性、layout 和输出路径均在调用工具前验证。`--raw-dir` 默认 `data/raw`，更改存放根目录时需与项目 `paths.raw` 一致。
 转换在 `data/tmp/` 的独立目录完成；成功验证才移动压缩产物到 samples.tsv 路径。
 失败的临时输出保留便于诊断。RNA 中额外的 unpaired FASTQ 保留在对应 staging 目录，状态记录包含位置，不作为 PE 输入。
 压缩会短暂同时保留未压缩和压缩文件，磁盘空间仍需关注。
 
-测试：模拟网络工具验证了错误退出、中断传播、末行无换行、双层目录识别及转换行为；本脚本尚未用完整真实 SRA 完成端到端下载/转换。
+测试：模拟网络工具验证了错误退出、中断传播、末行无换行、双层目录识别及转换行为；本地已有 4 runs 的真实转换记录；其他下载方式无需伪造本脚本的 completed manifest。
 
 ## 网络受限时的 4-run 最小真实演示
 
-完整研究设计仍是 8 runs；为了先打通真实数据路径，可以只取每个 condition、每个 assay 各一个 library：
+当前默认分析全部 8 runs；下面只是可选子集示例，可以只取每个 condition、每个 assay 各一个 library：
 
 | condition | assay | sample | run | archive bytes |
 | --- | --- | --- | --- | ---: |
@@ -96,7 +98,7 @@
 
 分析时分别使用 `config/rnaseq-minimal.yaml` 和 `config/riboseq-minimal.yaml`。两份配置仍保留真实 library type、strand 和 offset 门禁，必须在真实 QC/方法核实后填写。RNA 最小配置固定 `run_deseq2: false`，因为每个 condition 只有一个 library；它只能产出定量和描述性比较，不能估计生物学变异、报告可靠 p 值/FDR 或声称差异表达。Ribo 与最终 TE 同样只作描述性展示。
 
-最小演示通过后，可以续传其余 4 条并切回 `config/rnaseq.yaml`、`config/riboseq.yaml`，不需要推倒已有结果。
+当前全部 8 runs 已由用户确认下载，不应为切换配置重新下载。默认 `config/rnaseq.yaml`、`config/riboseq.yaml` 自动选择全部活跃的对应 assay。
 
 ## 空间与后续入口
 

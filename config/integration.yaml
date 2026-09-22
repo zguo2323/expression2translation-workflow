@@ -4,6 +4,11 @@ aggregation: arithmetic_mean_by_condition
 pseudocount: 1.0
 min_rna_tpm: 1.0
 min_ribo_tpm: 1.0
+# A TE ranking alone can elevate genes supported by only a few P-sites.  These
+# controls label count-supported, sensitivity-stable descriptive candidates;
+# they do not turn the analysis into differential-TE inference.
+candidate_min_ribo_psites_per_sample: 10
+candidate_pseudocounts: [0.1, 1.0, 10.0]
 contrast: [Middle, Young]
 differential_te: false
 report_title: Expression-to-Translation Workflow Report

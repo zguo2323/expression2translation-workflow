@@ -1,7 +1,6 @@
 rule validate_metadata:
     input:
         samples=config["samples"],
-        manifest=config["source_manifest"],
         sources=preflight["source_files"],
         code=[
             "src/__init__.py",
@@ -18,7 +17,10 @@ rule validate_metadata:
         VALIDATION_REPORT
     params:
         python=sys.executable,
-        effective_config=json.dumps(config, sort_keys=True)
+        # Metadata validation is independent of the requested analysis target.
+        # Keeping this fixed prevents a stage-only switch from invalidating every
+        # downstream artifact through the metadata report's provenance.
+        effective_config=json.dumps({**config, "stage": "metadata"}, sort_keys=True)
     threads: 1
     resources:
         mem_mb=config["resources"]["mem_mb"]

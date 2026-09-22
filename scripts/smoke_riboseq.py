@@ -12,6 +12,8 @@ import subprocess
 import sys
 import yaml
 
+from synthetic_inputs import write_samples
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.validation.sequences import reverse_complement, write_fasta
@@ -61,6 +63,7 @@ def smoke(args):
 
     config = yaml.safe_load((target / "config/config.yaml").read_text())
     config["stage"] = "riboseq"
+    samples = write_samples(target, config, assays=("riboseq",))
     config["reference"] = {key: manifest[key] for key in ("reference_id", "provider", "release")}
     config["reference"].update({role: manifest["files"][role]["path"] for role in ("genome", "annotation", "transcriptome", "rrna")})
     (target / "config/config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
@@ -68,19 +71,18 @@ def smoke(args):
     offsets = target / "config/synthetic_psite_offsets.tsv"
     offsets.write_text("read_length\tpsite_offset\n28\t12\n")
     ribo = yaml.safe_load((target / "config/riboseq.yaml").read_text())
-    ribo.update(reference_manifest=manifest_path, synthetic=True, strand_mode="forward",
+    ribo.update(sample_ids=[], reference_manifest=manifest_path, synthetic=True, strand_mode="forward",
                 strand_evidence="synthetic reads generated in transcript orientation",
                 offset_table="config/synthetic_psite_offsets.tsv", offset_evidence="synthetic P-sites planted at frame 0",
+                footprint_lengths=[28],
                 min_mapping_rate=0.9, max_rrna_fraction=0.2, min_frame0_fraction=0.95)
     (target / "config/riboseq.yaml").write_text(yaml.safe_dump(ribo, sort_keys=False))
     qc = yaml.safe_load((target / "config/qc.yaml").read_text())
-    qc.update(mode="trim", synthetic=True)
+    qc.update(mode="trim", synthetic=True, sample_ids=[])
     qc["policies"]["riboseq"].update(confirmed=True, evidence="synthetic fixed 28 nt reads without adapters/barcodes",
         adapter_mode="none", barcode_mode="none", min_length=20)
     (target / "config/qc.yaml").write_text(yaml.safe_dump(qc, sort_keys=False))
 
-    with (target / "config/samples.tsv").open() as handle:
-        samples = [row for row in csv.DictReader(handle, delimiter="\t") if row["assay"] == "riboseq"]
     for sample_index, sample in enumerate(samples):
         path = target / sample["fastq_1"]
         path.parent.mkdir(parents=True, exist_ok=True)

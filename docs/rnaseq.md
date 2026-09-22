@@ -47,13 +47,13 @@ manifest 时间记录为本次下载后的核验登记时间；上游未提供�
 
 ## 真实数据启动条件
 
-`config/rnaseq.yaml` 明确选择 4 个 RNA libraries，RNA 阶段使用这些 ID 驱动 QC，不要求 Ribo FASTQ 已下载。
+`config/rnaseq.yaml` 的 `sample_ids: []` 自动选择活跃表的全部 RNA PE libraries；当前实例为 4 个。显式列表可选子集，解析后统一驱动 QC。样本数量不固定，见 [输入指南](data-input.md)。
 运行前需要：
 
-1. 4 个 RNA libraries 都有完整两端 FASTQ。
-2. `config/qc.yaml` 为 `mode: trim`，RNA policy 经确认且有方法证据；Ribo policy 可继续待定。
-3. `library_type`/`library_evidence` 明确。允许 IU/ISF/ISR 或显式选择 A 自动推断；GEO 的 TruSeq Stranded mRNA 线索不自动等于已验证 ISR。
-4. 启用 DESeq2 时，`design_confirmed: true` 且记录 assay 内生物学重复/分组证据；至少两组、每组两个 libraries。不同 assay 的重复不参与这个模型。
+1. 所选 RNA libraries 都有完整两端 FASTQ。
+2. `config/qc.yaml` 为 `mode: trim`，RNA policy 经确认且有方法证据。
+3. `library_type`/`library_evidence` 明确。当前实例由四样本分散抽样及 Salmon pilot 确认为 ISR；其他数据允许 IU/ISF/ISR 或显式选择 A 自动推断，不能只凭试剂盒名称照抄。
+4. 启用 DESeq2 时，`design_confirmed: true` 且记录 assay 内生物学重复/分组证据；所选 contrast 恰好两组、每组至少两个独立生物学重复。不同 assay 的重复不参与这个模型。
 
 Salmon 使用完整 genome 作为 decoy，显式固定 k=31 和 keepDuplicates，保存实际版本/命令、mapping 和文库兼容性指标。
 当前 mapping rate 门槛为 0.5，compatible fragment ratio 为 0.8，属于可配置工程门禁，需结合真实 reads 复核；不是通用生物学合格标准。
@@ -107,4 +107,4 @@ contrast 显式为 Middle / Young，正 log2FC 代表 Middle 更高；不强加 
 其中 8 个基因增加、8 个减少、1 个 rRNA gene 不生成 reads；检查已知变化方向、零计数过滤、SHA-256 产物、无修改重跑及 library_type 变化后的重新调度。
 synthetic fit_type 使用 mean，真实配置保留 parametric；实际 fitType 写入摘要。
 合成数据中的显著基因数不能作为真实 GSE203147 分析结果，也不是灵敏度/假阳性率的全面基准。
-真实 reads 方向、adapter、参考适配率、DE 结果仍待数据；GitHub Actions 仅已配置，未声称远端运行成功。
+GSE203147 的方向与 adapter policy 已完成小规模验证，正式全量 mapping、样本相关性和 DE 结果以本轮真实运行产物为准；GitHub Actions 仅已配置，未声称远端运行成功。

@@ -1,0 +1,2 @@
+# TSV samplesheets retain a trailing tab to represent an empty final field.
+*.tsv whitespace=-trailing-space

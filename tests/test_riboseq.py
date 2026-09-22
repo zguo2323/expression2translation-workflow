@@ -61,10 +61,10 @@ class RiboConfigTests(unittest.TestCase):
         (self.root / "offsets.tsv").write_text("read_length\tpsite_offset\n28\t12\n")
         self.ribo = yaml.safe_load(Path("config/riboseq.yaml").read_text())
         self.ribo.update(strand_mode="forward", strand_evidence="synthetic protocol", offset_table="offsets.tsv",
-                         offset_evidence="synthetic planted P-sites")
+                         offset_evidence="synthetic planted P-sites", footprint_lengths=[28])
         (self.root / "ribo.yaml").write_text(yaml.safe_dump(self.ribo, sort_keys=False))
         self.config = {"ribo_config": "ribo.yaml"}
-        self.samples = [dict(sample_id=sid, assay="riboseq", layout="SINGLE") for sid in self.ribo["sample_ids"]]
+        self.samples = [dict(sample_id=f"ribo_{i}", assay="riboseq", layout="SINGLE", condition="Young", replicate=str(i)) for i in range(1, 4)]
 
     def load(self):
         with chdir(self.root), patch("src.riboseq.config.validate_rna_reference", return_value={"reference_id": "test", "files": {}}):
@@ -74,6 +74,14 @@ class RiboConfigTests(unittest.TestCase):
         ribo, selected, _, offsets = self.load()
         self.assertEqual(set(selected), set(ribo["sample_ids"]))
         self.assertEqual(offsets, {28: 12})
+
+    def test_explicit_invalid_ribo_selections(self):
+        self.samples.append(dict(sample_id="rna", assay="rnaseq", layout="PAIRED", condition="Young", replicate="9"))
+        for ids in (["unknown"], ["ribo_1", "ribo_1"], ["rna"]):
+            self.ribo["sample_ids"] = ids
+            (self.root / "ribo.yaml").write_text(yaml.safe_dump(self.ribo))
+            with self.subTest(ids=ids), self.assertRaises(ValidationError):
+                self.load()
 
     def test_unresolved_method_fields_block(self):
         for key in ("strand_mode", "strand_evidence", "offset_table", "offset_evidence"):
@@ -89,6 +97,13 @@ class RiboConfigTests(unittest.TestCase):
             path.write_text(body)
             with self.subTest(body=body), self.assertRaises((ValidationError, ValueError)):
                 load_offsets(path)
+
+    def test_selected_lengths_must_match_offset_table(self):
+        for lengths in ([], [27], [28, 28], [28, 29]):
+            self.ribo["footprint_lengths"] = lengths
+            (self.root / "ribo.yaml").write_text(yaml.safe_dump(self.ribo, sort_keys=False))
+            with self.subTest(lengths=lengths), self.assertRaises(ValidationError):
+                self.load()
 
 
 if __name__ == "__main__":

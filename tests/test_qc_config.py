@@ -37,13 +37,29 @@ class QCConfigTests(unittest.TestCase):
 
     def test_raw_needs_files_but_not_trim_policy(self):
         config = yaml.safe_load(Path("config/config.yaml").read_text())
+        qc_config = yaml.safe_load(Path("config/qc.yaml").read_text())
+        qc_config["mode"] = "raw"
         rows = [{"sample_id": "test", "assay": "riboseq", "fastq_1": "missing.fastq.gz", "fastq_2": ""}]
-        with self.assertRaisesRegex(ValidationError, "Missing FASTQ"):
-            load_qc(config, rows)
-        with patch("pathlib.Path.is_file", return_value=True):
+        with patch("src.qc.config.yaml.safe_load", return_value=qc_config):
+            with self.assertRaisesRegex(ValidationError, "Missing FASTQ"):
+                load_qc(config, rows)
+        with patch("src.qc.config.yaml.safe_load", return_value=qc_config), patch("pathlib.Path.is_file", return_value=True):
             qc, samples = load_qc(config, rows)
         self.assertEqual(qc["mode"], "raw")
         self.assertEqual(list(samples), ["test"])
+
+    def test_analysis_qc_selection_agreement(self):
+        config = {"qc_config": "config/qc.yaml"}
+        qc = yaml.safe_load(Path("config/qc.yaml").read_text())
+        rows = [dict(sample_id="one", assay="riboseq", fastq_1="data/raw/one.fastq.gz", fastq_2=""),
+                dict(sample_id="two", assay="riboseq", fastq_1="data/raw/two.fastq.gz", fastq_2="")]
+        with patch("src.qc.config.yaml.safe_load", return_value=qc), patch("pathlib.Path.is_file", return_value=True):
+            loaded, chosen = load_qc(config, rows, ["one"])
+        self.assertEqual(loaded["sample_ids"], ["one"])
+        self.assertEqual(list(chosen), ["one"])
+        qc["sample_ids"] = ["two"]
+        with patch("src.qc.config.yaml.safe_load", return_value=qc), self.assertRaisesRegex(ValidationError, "match analysis"):
+            load_qc(config, rows, ["one"])
 
     def test_reference_identity_then_changed_file(self):
         with tempfile.TemporaryDirectory() as temporary:

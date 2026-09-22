@@ -12,6 +12,8 @@ import subprocess
 import sys
 import yaml
 
+from synthetic_inputs import write_samples
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.validation.sequences import reverse_complement, write_fasta
@@ -54,22 +56,21 @@ def smoke(args):
                     "--genome-source", "generated synthetic", "--annotation-source", "generated synthetic"], cwd=target, check=True)
     config = yaml.safe_load((target / "config/config.yaml").read_text())
     config["stage"] = "rnaseq"
+    samples = write_samples(target, config, assays=("rnaseq",))
     manifest_path = "resources/reference/synthetic/derived/manifest.json"
     manifest = json.loads((target / manifest_path).read_text())
     config["reference"] = {k: manifest[k] for k in ("reference_id", "provider", "release")}
     config["reference"].update({role: manifest["files"][role]["path"] for role in ("genome", "annotation", "transcriptome", "rrna")})
     (target / "config/config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     rna = yaml.safe_load((target / "config/rnaseq.yaml").read_text())
-    rna.update(reference_manifest=manifest_path, synthetic=True, library_type="ISF", library_evidence="synthetic first mate forward",
-               design_confirmed=True, design_evidence="synthetic independent libraries with planted expression changes", fit_type="mean")
+    rna.update(sample_ids=[], reference_manifest=manifest_path, synthetic=True, library_type="ISF", library_evidence="synthetic first mate forward",
+               run_deseq2=True, contrast=["condition", "Middle", "Young"], design_confirmed=True, design_evidence="synthetic independent libraries with planted expression changes", fit_type="mean")
     (target / "config/rnaseq.yaml").write_text(yaml.safe_dump(rna, sort_keys=False))
     qc = yaml.safe_load((target / "config/qc.yaml").read_text())
-    qc.update(mode="trim", synthetic=True)
+    qc.update(mode="trim", synthetic=True, sample_ids=[])
     qc["policies"]["rnaseq"].update(confirmed=True, evidence="Synthetic Q40 fragments without adapters/barcodes", adapter_mode="none",
-        barcode_mode="none", min_length=50)
+        adapter_r1=None, adapter_r2=None, barcode_mode="none", min_length=50)
     (target / "config/qc.yaml").write_text(yaml.safe_dump(qc, sort_keys=False))
-    with (target / "config/samples.tsv").open() as handle:
-        samples = [s for s in csv.DictReader(handle, delimiter="\t") if s["assay"] == "rnaseq"]
     for sample in samples:
         p1, p2 = (target / sample[k] for k in ("fastq_1", "fastq_2"))
         p1.parent.mkdir(parents=True, exist_ok=True)

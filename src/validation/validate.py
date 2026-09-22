@@ -95,16 +95,56 @@ def unique(rows, field):
     require(not duplicates, f"Duplicate {field}: {duplicates}")
 
 
-def _validate_metadata(config, root):
-    check_schema(config, root / "workflow/schemas/config.schema.json", "config")
-    for value in config["paths"].values():
-        relative_path(root, value)
-    for key in ("genome", "annotation", "transcriptome", "rrna"):
-        if config["reference"][key] is not None:
-            relative_path(root, config["reference"][key])
-    if config["preprocessing"]["ribo_psite_offsets"] is not None:
-        relative_path(root, config["preprocessing"]["ribo_psite_offsets"])
+def validate_sample_rows(rows, root, design, raw_path, schema_path=None):
+    """One row per biological library; no accession or file existence required."""
+    schema_path = schema_path or root / "workflow/schemas/samples.schema.json"
+    for row in rows:
+        check_schema(row, schema_path, f"sample {row.get('sample_id')}")
+    unique(rows, "sample_id")
+    for key in ("run_accession", "geo_accession"):
+        unique([r for r in rows if r.get(key)], key)
+    identities = [(r["condition"], r["assay"], r["replicate"]) for r in rows]
+    require(len(identities) == len(set(identities)),
+            "Duplicate biological identity: condition × assay × replicate; merge technical runs/lanes upstream")
+    # The same biological specimen cannot be counted twice within an assay.
+    specimens = [(r["assay"], r["biosample"]) for r in rows if r.get("biosample")]
+    require(len(specimens) == len(set(specimens)), "Duplicate BioSample within assay; not independent biological replicates")
+    fastq_paths = set()
+    raw_dir = relative_path(root, raw_path) if raw_path is not None else None
+    for row in rows:
+        sid = row["sample_id"]
+        require(row["condition"] in design["conditions"], f"{sid}: condition absent from design.conditions")
+        require(row["layout"] == design["assays"][row["assay"]], f"{sid}: assay/layout mismatch")
+        require(bool(row["fastq_2"]) == (row["layout"] == "PAIRED"),
+                f"{sid}: PAIRED requires fastq_2; SINGLE requires empty fastq_2")
+        for value in (row["fastq_1"], row["fastq_2"]):
+            if not value or raw_dir is None:
+                continue
+            path = relative_path(root, value)
+            require(path.is_relative_to(raw_dir) and value.endswith((".fastq.gz", ".fq.gz")),
+                    f"{sid}: FASTQ must be .fastq.gz/.fq.gz under paths.raw")
+            require(path not in fastq_paths, f"{sid}: duplicate FASTQ path: {value}")
+            fastq_paths.add(path)
+    return fastq_paths
 
+
+def select_samples(ids, samples, assay, layout):
+    require(isinstance(ids, list) and all(isinstance(s, str) for s in ids)
+            and len(ids) == len(set(ids)), f"Invalid {assay} sample_ids: expected unique list")
+    if not ids:
+        ids = [s["sample_id"] for s in samples if s["assay"] == assay]
+    by_id = {s["sample_id"]: s for s in samples}
+    require(ids and set(ids) <= set(by_id), f"{assay} selection contains unknown sample or no {assay} libraries")
+    chosen = {sid: by_id[sid] for sid in ids}
+    label = "paired-end RNA" if assay == "rnaseq" else "single-end riboseq"
+    require(all(s["assay"] == assay and s["layout"] == layout for s in chosen.values()),
+            f"Selection requires known {label} samples")
+    identities = [(s["condition"], s["replicate"]) for s in chosen.values()]
+    require(len(identities) == len(set(identities)), f"{assay}: duplicate biological replicate identity")
+    return ids, chosen
+
+
+def validate_geo_sra(config, root, rows):
     manifest_path = relative_path(root, config["source_manifest"])
     manifest = json.loads(manifest_path.read_text())
     require(manifest.get("schema_version") == 1, "Unsupported source manifest version")
@@ -123,33 +163,16 @@ def _validate_metadata(config, root):
                 f"Source checksum/size mismatch: {entry['path']}")
     sources = {key: relative_path(root, value) for key, value in config["sources"].items()}
     require(all(path in seen for path in sources.values()), "Required source absent from manifest")
-    sample_path = relative_path(root, config["samples"])
-    rows = read_table(sample_path, "\t")
-    for row in rows:
-        check_schema(row, root / "workflow/schemas/samples.schema.json", f"sample {row.get('sample_id')}")
-    for key in ("sample_id", "run_accession", "geo_accession", "biosample"):
-        unique(rows, key)
-
     accessions = sources["accessions"].read_text().splitlines()
-    require(all(re.fullmatch(r"SRR[0-9]+", item) for item in accessions), "Invalid accession list")
+    require(all(re.fullmatch(r"(?:SRR|ERR|DRR)[0-9]+", item) for item in accessions), "Invalid accession list")
     require(len(accessions) == len(set(accessions)), "Duplicate SRR in accession list")
-    require(set(accessions) == {r["run_accession"] for r in rows},
+    require({r["run_accession"] for r in rows} <= set(accessions),
             "Sample runs do not match selected accession list")
     sra_rows = read_table(sources["sra"], ",")
     unique(sra_rows, "Run")
     sra = {r["Run"]: r for r in sra_rows}
     geo = read_soft(sources["geo_soft"])
     design = config["design"]
-    expected = {(condition, assay, str(rep))
-                for condition in design["conditions"] for assay in design["assays"]
-                for rep in design["replicates"]}
-    actual = [(r["condition"], r["assay"], r["replicate"]) for r in rows]
-    require(len(actual) == len(expected) and set(actual) == expected,
-            "Incomplete/duplicate condition × assay × replicate design")
-
-    fastq_paths = set()
-    raw_dir = relative_path(root, config["paths"]["raw"])
-    total_bytes = total_bases = 0
     evidence = []
     for row in rows:
         sid, run, gsm = row["sample_id"], row["run_accession"], row["geo_accession"]
@@ -179,26 +202,50 @@ def _validate_metadata(config, root):
                     for v in relations), f"{sid}: GEO SRA experiment mismatch")
         if row["assay"] == "rnaseq":
             require(source["Assay Type"] == "RNA-Seq", f"{sid}: unexpected SRA RNA assay")
-        # Ribo identity comes from manually curated assay + GEO title, never OTHER alone.
-        require(bool(row["fastq_2"]) == (row["layout"] == "PAIRED"),
-                f"{sid}: PAIRED requires fastq_2; SINGLE requires empty fastq_2")
-        for value in (row["fastq_1"], row["fastq_2"]):
-            if not value:
-                continue
-            path = relative_path(root, value)
-            require(path.is_relative_to(raw_dir) and value.endswith((".fastq.gz", ".fq.gz")),
-                    f"{sid}: FASTQ must be .fastq.gz/.fq.gz under paths.raw")
-            require(path not in fastq_paths, f"{sid}: duplicate FASTQ path: {value}")
-            fastq_paths.add(path)
         archive_bytes, bases = int(source["Bytes"]), int(source["Bases"])
         require(archive_bytes > 0 and bases > 0, f"{sid}: invalid SRA size/bases")
-        total_bytes += archive_bytes
-        total_bases += bases
         evidence.append({**row, "sra_assay_type": source["Assay Type"], "geo_title": title,
                          "archive_bytes": archive_bytes, "bases": bases})
 
+    return evidence, manifest, [config["source_manifest"]] + [e["path"] for e in entries]
+
+
+def _validate_metadata(config, root):
+    check_schema(config, root / "workflow/schemas/config.schema.json", "config")
+    for value in config["paths"].values():
+        relative_path(root, value)
+    for key in ("genome", "annotation", "transcriptome", "rrna"):
+        if config["reference"][key] is not None:
+            relative_path(root, config["reference"][key])
+    if config["preprocessing"]["ribo_psite_offsets"] is not None:
+        relative_path(root, config["preprocessing"]["ribo_psite_offsets"])
+    sample_path = relative_path(root, config["samples"])
+    rows = read_table(sample_path, "\t")
+    design = config["design"]
+    fastq_paths = validate_sample_rows(rows, root, design, config["paths"]["raw"])
+    manifest, source_files = None, []
+    if config["source_validation"] == "geo_sra":
+        study_path = relative_path(root, config["study_samples"])
+        study = read_table(study_path, "\t")
+        # Historical study paths/conditions are independent of the active input location/subset.
+        study_design = {**design, "conditions": sorted({r["condition"] for r in study})}
+        validate_sample_rows(study, root, study_design, None)
+        study_evidence, manifest, source_files = validate_geo_sra(config, root, study)
+        by_id = {r["sample_id"]: r for r in study_evidence}
+        evidence = []
+        for row in rows:
+            require(row["sample_id"] in by_id, f"Unknown study sample: {row['sample_id']}")
+            original = by_id[row["sample_id"]]
+            for key in ("run_accession", "geo_accession", "biosample", "condition", "assay", "replicate", "layout"):
+                require(row.get(key) == original[key], f"{row['sample_id']}: study {key} mismatch")
+            evidence.append({**original, **row})
+        source_files.append(config["study_samples"])
+    else:
+        evidence = [{**row, "archive_bytes": None, "bases": None} for row in rows]
+    total_bytes = sum(r["archive_bytes"] for r in evidence) if manifest else None
+    total_bases = sum(r["bases"] for r in evidence) if manifest else None
     # Prevent configurable report/log locations from overwriting an input or future reads.
-    protected = seen | {sample_path, manifest_path}
+    protected = {sample_path} | {relative_path(root, p) for p in source_files}
     for key in ("results", "logs"):
         directory = relative_path(root, config["paths"][key])
         for protected_dir in ("config", "metadata", "src", "workflow", "envs", "docs", "tests", "resources", ".git"):
@@ -216,15 +263,17 @@ def _validate_metadata(config, root):
                   for key, value in config[section].items() if value is None]
     return {
         "status": "passed", "stage": "metadata", "analysis_ready": False,
+        "source_validation": config["source_validation"],
         "sample_count": len(rows), "expected_fastq_count": len(fastq_paths),
         "groups": [{"condition": c, "assay": a,
                     "count": sum(r["condition"] == c and r["assay"] == a for r in rows)}
                    for c in design["conditions"] for a in design["assays"]],
-        "archive_bytes": total_bytes, "archive_gb": total_bytes / 1e9,
-        "archive_gib": total_bytes / 1024 ** 3, "bases": total_bases,
-        "source_files": [e["path"] for e in entries], "source_manifest": manifest,
+        "archive_bytes": total_bytes, "archive_gb": total_bytes / 1e9 if total_bytes is not None else None,
+        "archive_gib": total_bytes / 1024 ** 3 if total_bytes is not None else None, "bases": total_bases,
+        "source_files": source_files, "source_manifest": manifest,
         "samples": evidence, "unresolved_parameters": unresolved,
         "limitations": ["FASTQ and reference existence/content have not been checked.",
+                        "Biological independence requires method evidence; identifiers alone cannot prove it.",
                         "Cross-assay biological pairing is unconfirmed.",
                         "Metadata success does not authorize or establish analysis readiness."],
     }
@@ -253,7 +302,9 @@ def write_report(config, output):
         "effective_config": config,
         "effective_config_sha256": hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
         "samples_sha256": sha256(root / config["samples"]),
-        "source_manifest_sha256": sha256(root / config["source_manifest"]),
+        "source_manifest_sha256": (sha256(root / config["source_manifest"])
+                                   if report["source_manifest"] is not None else None),
+        "source_files_sha256": {p: sha256(root / p) for p in report["source_files"]},
         "code_and_environment_sha256": {p.as_posix(): sha256(p) for p in code_paths},
         "software": {"python": platform.python_version()},
     }

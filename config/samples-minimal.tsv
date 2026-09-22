@@ -1,0 +1,5 @@
+sample_id	run_accession	geo_accession	biosample	assay	condition	replicate	layout	fastq_1	fastq_2
+young_rna_2	SRR19240768	GSM6160428	SAMN28471181	rnaseq	Young	2	PAIRED	data/raw/SRR19240768_1.fastq.gz	data/raw/SRR19240768_2.fastq.gz
+middle_rna_1	SRR19240772	GSM6160425	SAMN28471184	rnaseq	Middle	1	PAIRED	data/raw/SRR19240772_1.fastq.gz	data/raw/SRR19240772_2.fastq.gz
+young_ribo_1	SRR19240765	GSM6160432	SAMN28471177	riboseq	Young	1	SINGLE	data/raw/SRR19240765.fastq.gz	
+middle_ribo_1	SRR19240770	GSM6160430	SAMN28471179	riboseq	Middle	1	SINGLE	data/raw/SRR19240770.fastq.gz	

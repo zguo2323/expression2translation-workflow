@@ -218,6 +218,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # E2T local data and workflow products
+internal/
 .DS_Store
 .snakemake/
 data/

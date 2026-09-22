@@ -5,6 +5,7 @@ strand_mode: null             # Confirm from methods/reads before running
 strand_evidence: null
 offset_table: null             # Derive from real read-length/metagene evidence
 offset_evidence: null
+footprint_lengths: []          # Explicitly selected lengths; must exactly match offset table
 min_mapq: 20
 require_unique: true
 min_mapping_rate: 0.5

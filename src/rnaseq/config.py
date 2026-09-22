@@ -1,7 +1,7 @@
 from collections import Counter
 from pathlib import Path
 import yaml
-from src.validation.validate import require, relative_path
+from src.validation.validate import require, relative_path, select_samples
 from src.validation.reference import validate_rna_reference
 
 
@@ -11,10 +11,7 @@ def load_rna(config, samples):
     expected = {"reference_manifest", "sample_ids", "synthetic", "library_type", "library_evidence", "index_k", "min_mapping_rate", "min_library_compatibility",
                 "run_deseq2", "design_confirmed", "design_evidence", "contrast", "min_count", "min_samples", "alpha", "fit_type"}
     require(isinstance(rna, dict) and set(rna) == expected, "Invalid RNA config keys")
-    ids = rna["sample_ids"]
-    require(isinstance(ids, list) and ids and all(isinstance(s, str) for s in ids) and len(ids) == len(set(ids)), "Invalid RNA sample_ids")
-    chosen = {s["sample_id"]: s for s in samples if s["sample_id"] in ids}
-    require(set(chosen) == set(ids) and all(s["assay"] == "rnaseq" and s["layout"] == "PAIRED" for s in chosen.values()), "RNA selection requires known paired-end RNA samples")
+    rna["sample_ids"], chosen = select_samples(rna["sample_ids"], samples, "rnaseq", "PAIRED")
     require(rna["library_type"] in ("A", "IU", "ISF", "ISR") and isinstance(rna["library_evidence"], str) and bool(rna["library_evidence"].strip()), "RNA library_type/evidence unresolved; choose documented auto-detection or verified orientation")
     require(type(rna["index_k"]) is int and 3 <= rna["index_k"] <= 31 and rna["index_k"] % 2 == 1, "Salmon index_k must be odd, 3..31")
     for key in ("synthetic", "run_deseq2", "design_confirmed"):
@@ -30,7 +27,7 @@ def load_rna(config, samples):
     require(set(groups) == set(contrast[1:]), "RNA selected conditions must match contrast")
     if rna["run_deseq2"]:
         require(rna["design_confirmed"] and isinstance(rna["design_evidence"], str) and rna["design_evidence"].strip(), "DESeq2 design not confirmed")
-        require(all(n >= 2 for n in groups.values()), "DESeq2 requires >=2 libraries per condition")
+        require(all(n >= 2 for n in groups.values()), "DESeq2 requires >=2 independent biological replicates per contrast condition")
     manifest = validate_rna_reference(rna["reference_manifest"])
     reference_id = config["reference"]["reference_id"]
     require(reference_id == manifest["reference_id"], "RNA reference_id disagrees with project reference")

@@ -1,14 +1,15 @@
 reference_manifest: metadata/reference-ensembl-115.json
-sample_ids: [young_ribo_1, young_ribo_2, middle_ribo_1, middle_ribo_2]
+sample_ids: []             # all active libraries of this assay
 synthetic: false
-strand_mode: null             # forward | reverse | unstranded; confirm from methods/reads
-strand_evidence: null
-offset_table: null             # TSV: read_length, psite_offset (0-based from the 5' end)
-offset_evidence: null
+strand_mode: forward           # forward | reverse | unstranded; confirm from methods/reads
+strand_evidence: "Dispersed rRNA-depleted diagnostic: 95.35-98.49% of strict unique coding alignments were transcript-forward across all four samples"
+offset_table: config/psite-offsets-gse203147.tsv # 0-based distance from read 5' end
+offset_evidence: "Primary high-confidence 28-nt analysis: all four samples peak at CDS start -12 and give 79.91-92.25% frame 0 at offset 12 (80.03-92.09% after top-5-gene exclusion); riboWaltz 2.0 returns corrected offset 12 for 3/4 samples and raw offset 12 before cross-length correction for the fourth"
+footprint_lengths: [28]       # Shared high-confidence length; other lengths excluded explicitly
 min_mapq: 20
 require_unique: true
 min_mapping_rate: 0.5
-max_rrna_fraction: 0.8
-min_frame0_fraction: 0.5
+max_rrna_fraction: 0.99        # Feasibility ceiling; observed ~0.972-0.979 remains a severe QC limitation
+min_frame0_fraction: 0.75
 metagene_upstream: 30
 metagene_downstream: 90

@@ -17,7 +17,7 @@ rule integrate_expression_translation:
             config_file=INTEGRATION_CONFIG, reference_manifest=RNA["reference_manifest"],
             reference_id=RNA_REFERENCE["reference_id"],
             rna_tpm=f"{RNA_REPORT}/gene_tpm.tsv", rna_counts=f"{RNA_REPORT}/gene_estimated_counts.tsv",
-            ribo_counts=f"{RIBO_REPORT}/gene_counts.tsv",
+            ribo_counts=f"{RIBO_REPORT}/gene_counts.tsv", ribo_qc=f"{RIBO_REPORT}/qc_metrics.tsv",
             rna_samples=[dict(sample_id=sid, condition=RNA_SAMPLES[sid]["condition"]) for sid in RNA["sample_ids"]],
             ribo_samples=[dict(sample_id=sid, condition=RIBO_SAMPLES[sid]["condition"]) for sid in RIBO["sample_ids"]]))
     conda: "../../envs/workflow.yaml"
@@ -45,6 +45,8 @@ rule build_catalog:
             rna_counts=f"{RNA_REPORT}/gene_estimated_counts.tsv", rna_tpm=f"{RNA_REPORT}/gene_tpm.tsv",
             ribo_counts=f"{RIBO_REPORT}/gene_counts.tsv", ribo_tpm=f"{INTEGRATION_ROOT}/ribo_sample_cds_tpm.tsv",
             condition_te=f"{INTEGRATION_ROOT}/condition_te.tsv", te_contrast=f"{INTEGRATION_ROOT}/te_contrast.tsv",
+            te_candidate_qc=f"{INTEGRATION_ROOT}/te_candidate_qc.tsv",
+            differential_te_readiness=f"{INTEGRATION_ROOT}/differential_te_readiness.json",
             ribo_qc=f"{RIBO_REPORT}/qc_metrics.tsv",
             rna_qc=[dict(sample_id=sid, path=f"{RNA_ROOT}/quant/{sid}/aux_info/meta_info.json") for sid in RNA["sample_ids"]],
             samples=[RNA_SAMPLES[sid] for sid in RNA["sample_ids"]] + [RIBO_SAMPLES[sid] for sid in RIBO["sample_ids"]],
@@ -55,7 +57,9 @@ rule build_catalog:
                 dict(path=f"{RIBO_REPORT}/provenance.json", kind="ribo_provenance"),
                 dict(path=f"{INTEGRATION_ROOT}/analysis.json", kind="integration_analysis"),
                 dict(path=f"{INTEGRATION_ROOT}/condition_te.tsv", kind="condition_te"),
-                dict(path=f"{INTEGRATION_ROOT}/te_contrast.tsv", kind="te_contrast")]))
+                dict(path=f"{INTEGRATION_ROOT}/te_contrast.tsv", kind="te_contrast"),
+                dict(path=f"{INTEGRATION_ROOT}/te_candidate_qc.tsv", kind="te_candidate_qc"),
+                dict(path=f"{INTEGRATION_ROOT}/differential_te_readiness.json", kind="differential_te_readiness")]))
     conda: "../../envs/workflow.yaml"
     log: config["paths"]["logs"] + "/integration/catalog.log"
     shell: "python -m src.catalog.build --task {params.task:q} > {log:q} 2>&1"

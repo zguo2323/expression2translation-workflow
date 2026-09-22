@@ -116,12 +116,43 @@ class RNAConfigTests(unittest.TestCase):
         with patch("src.rnaseq.config.yaml.safe_load", return_value=self.rna):
             return load_rna(self.config, self.samples)
 
+    def mock_reference(self):
+        reference = self.config["reference"]
+        return {**reference, "files": {k: {"path": reference[k]} for k in ("genome", "annotation", "transcriptome", "rrna")}}
+
+    def test_auto_selection_and_confirmed_design(self):
+        self.rna.update(library_type="IU", library_evidence="test", design_confirmed=True, design_evidence="independent biological cultures")
+        with patch("src.rnaseq.config.validate_rna_reference", return_value=self.mock_reference()):
+            loaded, chosen, _ = self.load()
+        expected = [s["sample_id"] for s in self.samples if s["assay"] == "rnaseq"]
+        self.assertEqual(loaded["sample_ids"], expected)
+        self.assertEqual(list(chosen), expected)
+
+    def test_descriptive_subset_two_libraries(self):
+        self.rna.update(sample_ids=["young_rna_2", "middle_rna_1"], library_type="IU", library_evidence="test", run_deseq2=False)
+        with patch("src.rnaseq.config.validate_rna_reference", return_value=self.mock_reference()):
+            loaded, chosen, _ = self.load()
+        self.assertEqual(len(chosen), 2)
+        self.assertFalse(loaded["run_deseq2"])
+
+    def test_explicit_invalid_selections(self):
+        for ids in (["missing"], ["young_rna_1", "young_rna_1"], ["young_ribo_1"], "young_rna_1"):
+            self.rna["sample_ids"] = ids
+            with self.subTest(ids=ids), self.assertRaises(ValidationError):
+                self.load()
+
+    def test_duplicate_biological_identity_cannot_enable_de(self):
+        self.samples[1]["replicate"] = self.samples[0]["replicate"]
+        with self.assertRaisesRegex(ValidationError, "biological replicate"):
+            self.load()
+
     def test_unresolved_library_blocks(self):
+        self.rna.update(library_type=None, library_evidence=None)
         with self.assertRaisesRegex(ValidationError, "library_type/evidence"):
             self.load()
 
     def test_unconfirmed_de_blocks(self):
-        self.rna.update(library_type="A", library_evidence="explicit inference test")
+        self.rna.update(library_type="A", library_evidence="explicit inference test", design_confirmed=False)
         with self.assertRaisesRegex(ValidationError, "design not confirmed"):
             self.load()
 

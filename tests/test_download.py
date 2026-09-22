@@ -20,9 +20,47 @@ class DownloadTests(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         (self.root / "runs.txt").write_text("SRR1\nSRR2")  # deliberately no final newline
-        (self.root / "samples.tsv").write_text("run_accession\nSRR1\nSRR2\n")
+        self.write_samples(["SRR1", "SRR2"])
         self.command = [sys.executable, str(ROOT / "scripts/download_reads.py"), "--accessions", "runs.txt", "--samples", "samples.tsv"]
         self.env = {**os.environ, "PATH": str(self.bin) + os.pathsep + os.environ["PATH"]}
+
+    def write_samples(self, runs):
+        (self.root / "samples.tsv").write_text(
+            "sample_id\trun_accession\tassay\tcondition\treplicate\tlayout\tfastq_1\tfastq_2\n" +
+            "".join(f"sample_{i}\t{run}\triboseq\tcontrol\t{i}\tSINGLE\tdata/raw/{run}.fastq.gz\t\n"
+                    for i, run in enumerate(runs, 1)))
+
+    def test_default_plan_follows_active_sheet_without_tools(self):
+        self.write_samples(["ERR10", "DRR20"])
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/download_reads.py"),
+                                 "--samples", "samples.tsv", "--dry-run"],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ERR10", result.stdout)
+        self.assertIn("DRR20", result.stdout)
+        self.assertNotIn("SRR1", result.stdout)
+        self.assertFalse((self.root / "data").exists())
+
+    def test_unmapped_explicit_run_rejected_before_download(self):
+        self.write_samples(["SRR1"])
+        self.fake("raise AssertionError('must not run')\n")
+        result = self.run_batch()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing from samplesheet", result.stderr)
+        self.assertFalse((self.root / "data").exists())
+
+    def test_external_fastq_never_downloaded_or_overwritten(self):
+        self.write_samples(["SRR1"])
+        (self.root / "runs.txt").write_text("SRR1")
+        target = self.root / "data/raw/SRR1.fastq.gz"
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"user data")
+        self.command.append("--convert")
+        result = self.run_batch()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("validate local files directly", result.stderr)
+        self.assertEqual(target.read_bytes(), b"user data")
+        self.assertFalse((self.root / "data/sra").exists())
 
     def fake(self, body):
         tool = self.bin / "prefetch"
@@ -81,7 +119,7 @@ class DownloadTests(unittest.TestCase):
 
     def test_convert_skip_verified_and_refuse_changed_outputs(self):
         (self.root / "runs.txt").write_text("SRR1")
-        (self.root / "samples.tsv").write_text("run_accession\tlayout\tfastq_1\tfastq_2\nSRR1\tSINGLE\tdata/raw/SRR1.fastq.gz\t\n")
+        self.write_samples(["SRR1"])
         self.fake("import sys\nfrom pathlib import Path\np=Path(sys.argv[-1])/'SRR1'\np.mkdir(parents=True,exist_ok=True)\n(p/'SRR1.sra').write_text('complete')\n")
         validate = self.bin / "vdb-validate"
         validate.write_text(f"#!{sys.executable}\n")
