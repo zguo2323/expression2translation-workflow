@@ -69,7 +69,7 @@ def smoke(args):
     qc = yaml.safe_load((target / "config/qc.yaml").read_text())
     qc.update(mode="trim", synthetic=True, sample_ids=[])
     qc["policies"]["rnaseq"].update(confirmed=True, evidence="Synthetic Q40 fragments without adapters/barcodes", adapter_mode="none",
-        barcode_mode="none", min_length=50)
+        adapter_r1=None, adapter_r2=None, barcode_mode="none", min_length=50)
     (target / "config/qc.yaml").write_text(yaml.safe_dump(qc, sort_keys=False))
     for sample in samples:
         p1, p2 = (target / sample[k] for k in ("fastq_1", "fastq_2"))
